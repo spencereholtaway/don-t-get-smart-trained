@@ -259,11 +259,31 @@
     return { width: s, height: s, data: g.getImageData(0, 0, s, s).data };
   }
 
+  // US railroad crossbuck: two white boards in an X with a dark outline
+  function crossbuckIcon() {
+    const s = 64, c = document.createElement('canvas'); c.width = c.height = s;
+    const g = c.getContext('2d');
+    g.translate(s / 2, s / 2);
+    for (const a of [Math.PI / 4, -Math.PI / 4]) {
+      g.save(); g.rotate(a);
+      g.fillStyle = '#1c241e'; g.fillRect(-29, -7, 58, 14);
+      g.restore();
+    }
+    for (const a of [Math.PI / 4, -Math.PI / 4]) {
+      g.save(); g.rotate(a);
+      g.fillStyle = '#ffffff'; g.fillRect(-26, -4.5, 52, 9);
+      g.restore();
+    }
+    return { width: s, height: s, data: g.getImageData(0, 0, s, s).data };
+  }
+
   function addAppLayers() {
     const css = getComputedStyle(document.documentElement);
     const accent = css.getPropertyValue('--accent').trim();
     if (map.hasImage('train')) map.removeImage('train');
     map.addImage('train', trainIcon(), { pixelRatio: 2 });
+    if (map.hasImage('crossbuck')) map.removeImage('crossbuck');
+    map.addImage('crossbuck', crossbuckIcon(), { pixelRatio: 2 });
 
     // gentle 3D buildings when zoomed in
     map.addLayer({ id: 'buildings-3d', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14,
@@ -294,8 +314,12 @@
       paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, ['case', ['get', 'soon'], 4, 2], 15, ['case', ['get', 'soon'], 8, 5]],
         'circle-color': ['case', ['get', 'soon'], css.getPropertyValue('--late').trim(), css.getPropertyValue('--muted').trim()],
         'circle-stroke-color': dark.matches ? '#0f1411' : '#ffffff', 'circle-stroke-width': 1.5, 'circle-pitch-alignment': 'map' } });
+    // crossbuck sign standing upright above each crossing
+    map.addLayer({ id: 'crossing-icons', type: 'symbol', source: 'crossings',
+      layout: { 'icon-image': 'crossbuck', 'icon-anchor': 'bottom', 'icon-offset': [0, -6], 'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.55, 14, 0.9],
+        'icon-pitch-alignment': 'viewport', 'icon-rotation-alignment': 'viewport', 'icon-allow-overlap': true, 'icon-ignore-placement': true } });
     map.addLayer({ id: 'crossing-labels', type: 'symbol', source: 'crossings', filter: ['get', 'soon'],
-      layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 13, 'text-variable-anchor': ['top', 'bottom', 'left', 'right'], 'text-radial-offset': 0.8, 'text-allow-overlap': false },
+      layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 13, 'text-anchor': 'top', 'text-offset': [0, 0.7], 'text-allow-overlap': false },
       paint: { 'text-color': css.getPropertyValue('--late').trim(), 'text-halo-color': dark.matches ? '#0f1411' : '#ffffff', 'text-halo-width': 2 } });
 
     map.addSource('trains', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });

@@ -423,7 +423,7 @@
     if (!navigator.geolocation) return showLocMsg('This browser can’t share your location. Tap a station instead.');
     locateBtn.textContent = 'Finding…';
     const onPos = (pos, refine) => {
-      if (!map.getSource('me')) return map.once('idle', () => onPos(pos, refine)); // map style still loading
+      if (!map.getSource('me')) return map.once('style.load', () => onPos(pos, refine)); // map style still loading
       locateBtn.textContent = 'Find me';
       const { longitude: lon, latitude: lat } = pos.coords;
       me = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} };

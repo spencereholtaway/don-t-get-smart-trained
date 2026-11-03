@@ -99,14 +99,9 @@ Test it in fixture mode with a fake clock: speed time up, make up delays, and sw
 
 ---
 
-## How the user runs it locally (on their Mac)
+## Who runs what
 
-```bash
-cd web
-cp .env.example .env    # then paste the key into .env
-npm install
-npm run dev
-```
+**The user never needs a terminal.** Claude runs every command: installs, the capture script, the dev server, tests and screenshots. The user only looks at results (screenshots or a shared link) and gives feedback. Don't hand the user shell commands. The only thing Claude can't do itself is change the cloud environment's settings (such as allowed network domains); for those, give the user the exact clicks.
 
 ## Out of scope for now
 - Accounts, notifications, favorites, trip planning

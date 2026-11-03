@@ -1,0 +1,12 @@
+{
+  "name": "smart-web-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "capture": "node scripts/capture.mjs",
+    "usage": "node scripts/usage.mjs"
+  },
+  "dependencies": {
+    "gtfs-realtime-bindings": "^1.1.1"
+  }
+}

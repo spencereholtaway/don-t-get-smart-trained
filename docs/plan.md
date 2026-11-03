@@ -17,7 +17,7 @@ The dev key still has 511.org's default limit of about 60 requests per hour, so:
    - Static GTFS data (stops, routes, shapes, timetable): fetch once and reuse it for days. Only refetch when the user asks.
    - Realtime data (vehicle positions, trip updates, alerts): reuse a cached response that is less than 60 seconds old.
 3. **Only the server talks to 511.** Browser tabs and reloads read from the proxy's cache, and a reload never triggers a request by itself.
-4. **Live refresh is an explicit UI toggle**, refreshes at most once per minute and turns itself off after 10 minutes.
+4. **Live refresh is an explicit UI toggle**, polls on the schedule in "Moving trains smoothly" step 7 (never more than once every 2 minutes per feed) and turns itself off after 10 minutes.
 5. **Stop on 429.** On a 429 response, stop calling 511 until the hour resets. Never retry in a loop.
 6. **Tests use saved fixture files**, never the live API (see "While building and testing" below).
 7. **Log every request** (time, endpoint, status) so usage can be checked.
@@ -38,6 +38,8 @@ The 40-per-hour budget is a hard ceiling, not a target. During development, aim 
 ## Phase 0: check the key (1–2 requests in total)
 
 - Confirm `API_511_KEY` is set. Never print, log or commit its value.
+- Run it with `web/scripts/capture.mjs` (`npm run capture -- static`, then `npm run capture -- tripupdates`). It enforces the budget, logs each request to `web/.cache/request-log.json` and never prints the key. `npm run usage` shows the last hour's count.
+- Cloud sessions: `api.511.org` must be in the environment's allowed network domains, or the request fails without reaching 511.
 - Make **one** request to download the SMART static GTFS data (operator `SA`, from the `/transit/datafeeds` endpoint), save it to `web/.cache/`, and unzip it.
 - Make **one** request to a realtime feed to see what SMART actually publishes. Vehicle positions may not exist for SMART; trip updates and alerts are more likely. Save the response as a test fixture in `web/fixtures/`.
 - Check the other SMART data sources too (no 511 requests needed):
@@ -57,7 +59,7 @@ The 40-per-hour budget is a hard ceiling, not a target. During development, aim 
 
 - A phone-sized layout (about 390×844), so it maps to an iPhone screen.
 - **Map: smooth and lightly 3D.** Use **MapLibre GL JS**, which is free and open source, renders on the GPU, and supports tilt and rotation. Don't use Leaflet, which is flat and slower when panning and zooming. For map tiles, use a free vector source that needs no key and includes building heights, such as [OpenFreeMap](https://openfreemap.org). Check its usage terms first.
-  - **Light 3D:** a gentle default tilt (about 40–50°), low-key 3D buildings that fade in only when zoomed in, and optionally soft hillshading for the valley terrain. Keep it understated: the trains and stations are the focus, not the scenery.
+  - **Light 3D:** a gentle default tilt (about 40–50°), low-key 3D buildings that fade in only when zoomed in, and optionally soft hillshading for the valley terrain. OpenFreeMap has building heights but no elevation tiles, so hillshading needs a separate free DEM source with no key, such as the Terrarium tiles on AWS Open Data. Skip it if that adds friction. Keep it understated: the trains and stations are the focus, not the scenery.
   - **Smooth interaction:** pinch to zoom, two-finger rotate and tilt, flick panning with momentum, and animated camera moves (`flyTo`/`easeTo`) when tapping a station, centering on the user or following a train. Avoid instant jumps.
   - **Draw trains, stations and the route as map layers, not HTML markers.** Trains are a GeoJSON source updated every animation frame, which works fine for SMART's handful of trains. This keeps everything at 60fps and lets trains tilt and rotate with the map. Point each train icon in its direction of travel along the track.
   - **Polish:** a subtle pulse on the user's location, and a soft glow or animated dash on the route line. Keep the mood calm, not busy.
@@ -82,7 +84,12 @@ The idea: **the timetable moves the trains, and live data only nudges them.** A 
 4. **Blend corrections instead of jumping.** Keep a *displayed* delay and a *target* delay. When new data arrives, only the target changes. The displayed delay moves toward it over about 20–30 seconds, so the train looks like it's speeding up or slowing down.
 5. **Trains never move backward.** If the train is shown ahead of where it really is, it slows down or holds at the next station until it's back in line. Holding at a station looks natural. If it's behind, it can move up to about 1.5× speed to catch up.
 6. **Show uncertainty as data ages.** Fresh data looks solid. As it gets older, keep using the last known delay but show the train as an estimate (faded marker, "estimated" label). After about 10 minutes without data, fall back to the plain timetable and say so.
-7. **Each refresh is one request for all trains.** Each 511 realtime feed (e.g. trip updates, filtered to `agency=SA`) returns every SMART train in one response. Because the timetable drives motion, refreshing every **2–5 minutes** is enough, and only while the page is visible. That's 12–30 requests per hour at most, and zero in fixture mode.
+7. **Each refresh is one request per feed, covering all trains.** Each 511 realtime feed (e.g. trip updates, filtered to `agency=SA`) returns every SMART train in one response, but each feed is a separate request, so poll them on different schedules and only while the page is visible:
+   - **Trip updates:** every 2–5 minutes (12–30 requests per hour). This is the feed that drives delays.
+   - **Service alerts:** every 15 minutes (4 per hour). Alerts change rarely.
+   - **Vehicle positions:** only if Phase 0 shows SMART publishes them, and then *instead of* trip updates on alternate refreshes, not in addition to them.
+
+   Worst case that's about 34 requests per hour, under the 40 ceiling. During development the 10-per-hour target still applies, which in practice means live mode runs for a few minutes at a time, not continuously. Zero in fixture mode.
 
 Test it in fixture mode with a fake clock: speed time up, make up delays, and swap fixtures to simulate a new update arriving. Check that trains never jump or move backward.
 

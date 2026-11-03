@@ -19,9 +19,19 @@ The dev key still has 511.org's default limit of about 60 requests per hour, so:
 3. **Only the server talks to 511.** Browser tabs and reloads read from the proxy's cache, and a reload never triggers a request by itself.
 4. **Live refresh is an explicit UI toggle**, refreshes at most once per minute and turns itself off after 10 minutes.
 5. **Stop on 429.** On a 429 response, stop calling 511 until the hour resets. Never retry in a loop.
-6. **Tests use saved fixture files**, never the live API.
+6. **Tests use saved fixture files**, never the live API (see "While building and testing" below).
 7. **Log every request** (time, endpoint, status) so usage can be checked.
 8. **Never print, log or commit the key's value.**
+
+### While building and testing: stay far below the limit
+
+The 40-per-hour budget is a hard ceiling, not a target. During development, aim to use **no more than about 10 requests per hour**.
+
+- **Offline by default.** The server starts in **fixture mode**: it serves saved responses from `web/fixtures/` and the cached static data, and makes no 511 requests. Live mode needs an explicit opt-in, for example `LIVE=1 npm run dev`.
+- **Capture once, reuse many times.** When a real response is needed, fetch it once and save it as a fixture. Build and debug the UI against that fixture. Make up variants such as a delayed train, an alert or an empty feed by editing copies of real fixtures, not by calling the API again.
+- **Live calls are for checking, not iterating.** Use live mode only to confirm that something works with real data, then switch back to fixture mode.
+- **Dev servers must not make requests on their own.** Hot reload, file watchers, server restarts and automated browser tests (e.g. Playwright screenshots) run in fixture mode and never trigger 511 requests.
+- **Say the cost first.** Before running anything in live mode, state how many requests it will make. At the end of each work session, report how many requests were used, from `/api/usage` or the request log.
 
 ---
 

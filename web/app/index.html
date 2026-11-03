@@ -327,10 +327,8 @@
     // trains change every frame: shallow tiling keeps each update cheap
     map.addSource('trains', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, maxzoom: 15, tolerance: 0, buffer: 32 });
     map.on('sourcedata', (e) => { if (e.sourceId === 'trains' && e.isSourceLoaded) trainsBusy = false; });
-    // pulse and direction arrow, for when you're zoomed out (they fade away at street zoom)
+    // direction arrow, for when you're zoomed out (it fades away at street zoom)
     map.addSource('train-marks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, maxzoom: 14 });
-    map.addLayer({ id: 'train-pulse', type: 'circle', source: 'train-marks', filter: ['==', ['get', 'kind'], 'pulse'],
-      paint: { 'circle-color': accent, 'circle-radius': 14, 'circle-opacity': 0.2, 'circle-stroke-color': accent, 'circle-stroke-width': 1.5, 'circle-stroke-opacity': 0.5, 'circle-pitch-alignment': 'viewport' } });
     if (map.hasImage('arrow')) map.removeImage('arrow');
     map.addImage('arrow', arrowIcon(), { pixelRatio: 2 });
     map.addLayer({ id: 'train-arrows', type: 'symbol', source: 'train-marks', filter: ['==', ['get', 'kind'], 'arrow'],
@@ -459,9 +457,9 @@
     map.getSource('heat')?.setData(heatFC());
     map.getSource('crossings')?.setData(crossingDotsFC());
   }
-  // Pulse wave, once per PULSE_CYCLE_S: every train rings at the same moment, then the yellow and
+  // Pulse wave, once per PULSE_CYCLE_S: the yellow and
   // red crossings ring one after another in the order trains will block them (soonest first).
-  const PULSE_CYCLE_S = 5, TRAIN_RING_S = 2, CROSS_RING_S = 1.6, CROSS_START_S = 0.6, CROSS_SPAN_S = 2.4;
+  const PULSE_CYCLE_S = 5, CROSS_RING_S = 1.6, CROSS_START_S = 0, CROSS_SPAN_S = 2.4;
   function crossingDotsFC() {
     const hot = crossings.filter((c) => c.heat).sort((a, b) => a.next - b.next);
     const step = Math.min(0.4, CROSS_SPAN_S / Math.max(1, hot.length));
@@ -632,7 +630,6 @@
           if (sg > 0) {
             headlights.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: P(half + 6, 0) } });
             const bearing = (Math.atan2(ux, uy) * 180 / Math.PI + 360) % 360;
-            marks.push({ type: 'Feature', properties: { kind: 'pulse' }, geometry: { type: 'Point', coordinates: P(-half - GAP_M / 2, 0) } });
             marks.push({ type: 'Feature', properties: { kind: 'arrow', bearing }, geometry: { type: 'Point', coordinates: P(half + 14, 0) } });
           }
         }
@@ -673,15 +670,8 @@
       map.getSource('train-marks')?.setData({ type: 'FeatureCollection', features: marks });
       if (dark.matches) map.getSource('headlights')?.setData({ type: 'FeatureCollection', features: headlights });
     }
-    // pulses: trains (fade away at street zoom, where the 3D train is big enough) and hot crossings
-    // one soft wave per cycle (see crossingDotsFC): rings ease out as they grow and fade to nothing
+    // crossing pulses: one soft wave per cycle (see crossingDotsFC): rings ease out as they grow and fade to nothing
     const T = (Date.now() / 1000) % PULSE_CYCLE_S;
-    const tp = Math.min(1, T / TRAIN_RING_S), tf = T < TRAIN_RING_S ? (1 - tp) ** 2 : 0;
-    if (map.getLayer('train-pulse')) {
-      map.setPaintProperty('train-pulse', 'circle-radius', 10 + 14 * (1 - (1 - tp) ** 3));
-      map.setPaintProperty('train-pulse', 'circle-opacity', ['interpolate', ['linear'], ['zoom'], 15, 0.15 * tf, 16.5, 0]);
-      map.setPaintProperty('train-pulse', 'circle-stroke-opacity', ['interpolate', ['linear'], ['zoom'], 15, 0.5 * tf, 16.5, 0]);
-    }
     if (map.getLayer('crossing-pulse')) {
       // r: this crossing's ring progress, from its delay in the wave (outside 0..1 = not showing)
       const ring = (out) => ['let', 'r', ['/', ['-', T, ['coalesce', ['get', 'delay'], 0]], CROSS_RING_S], out];

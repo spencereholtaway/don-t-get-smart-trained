@@ -6,6 +6,7 @@ Read `docs/decisions.md` first. It explains why the web version is throwaway and
 
 - **Use case:** before driving, check whether a SMART train is about to block the road crossings near you, so you don't get stuck at a lowered gate.
 - **The screen shows only:** a map with live trains, your location, and the crossings near you that a train will block soon (and when). No station panel, no replay or speed controls, nothing else unless the user asks.
+- **The user is the designer.** Ask before deciding anything visual or behavioral (what shows, colors, wording, thresholds, layout). Build only what was asked, then show it as soon as there is something to look at.
 - **Ask before adding features.** Show the user work early, even unfinished.
 - **Hosting:** GitHub Pages from `main` (https://spencereholtaway.github.io/don-t-get-smart-trained/). The app is `web/app/`.
 - **Live data:** a Cloudflare Worker holds `API_511_KEY`, polls 511 within the Rule zero budget, caches, and serves JSON to the page. Deploy it with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` from the environment.

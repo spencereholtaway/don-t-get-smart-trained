@@ -19,5 +19,5 @@
 - The browser probably can't call 511 directly, because CORS likely blocks it. Expect a tiny local proxy server that holds the key.
 
 ## Production app (later)
-- The iOS app must **not** call 511 directly from each phone, because the limit is counted per key and 511 says its API is not meant to be an app's backend. Plan for a small backend that polls 511 once and serves all users from its cache.
+- The iOS app must **not** call 511 directly from each phone, because the limit is counted per key and regulars on 511's developer forum say the API isn't meant to be an app's backend. Plan for a small backend that polls 511 once and serves all users from its cache.
 - 511's default limit is 60 requests per hour per key. To ask for more, email transitdata@511.org with the key, the rate needed, the use case, the endpoints and a justification.

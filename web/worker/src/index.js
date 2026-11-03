@@ -10,10 +10,11 @@ import { shapeTripUpdates, shapeVehicles, shapeAlerts } from './shape.js';
 
 const HOUR_MS = 3600_000;
 const HOURLY_BUDGET = 40;
-// Worst case 15 + 15 + 4 = 34 requests per hour, under the 40 ceiling.
+// Worst case 10 + 24 + 4 = 38 requests per hour, under the 40 ceiling. GPS (vehicle
+// positions) refreshes most often: it is the best signal of where a train really is.
 const FEEDS = {
-  tripupdates: { everyMs: 4 * 60_000, shape: shapeTripUpdates },
-  vehiclepositions: { everyMs: 4 * 60_000, shape: shapeVehicles },
+  tripupdates: { everyMs: 6 * 60_000, shape: shapeTripUpdates },
+  vehiclepositions: { everyMs: 150_000, shape: shapeVehicles },
   servicealerts: { everyMs: 15 * 60_000, shape: shapeAlerts },
 };
 

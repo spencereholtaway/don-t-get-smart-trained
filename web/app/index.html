@@ -196,7 +196,7 @@
   }
   }
   function applyRealtime(rt) {
-    const at = rt.tripUpdatesAt || rt.vehiclesAt;
+    const at = Math.max(rt.tripUpdatesAt || 0, rt.vehiclesAt || 0); // a new GPS fix counts, not just new trip updates
     if (!at || at === snapshotAt) return;
     prevPredicted = snapshotAt ? predicted : null;
     blendStart = nowS();
@@ -347,11 +347,19 @@
   // Level crossings (roads crossing the track at grade), saved in data.json by
   // scripts/build-crossings.mjs. Note how far along each direction's track they are.
   //
-  // Traffic heat on the streets around each crossing:
-  //   train within 5 min: yellow; within 1 min or gates down: red;
-  //   after the train clears, red fades out over FADE_S (traffic still backed up).
+  // Gate model, per train, per crossing (times relative to when the train reaches the crossing):
+  //   gates down 30 s before it arrives (FRA minimum warning is 20 s), up 30 s after the front
+  //   passes (train length + gates lifting);
+  //   station rule: a crossing within 250 m past a platform, in the direction of travel, goes
+  //   down when the train pulls into the station and stays down through the dwell (SMART's 2022
+  //   San Rafael study: ~52 s per train, ~3 min when trains pass, driven by station dwell);
+  //   uncertainty: the window widens as live data ages, and more for timetable-only estimates.
+  // Street heat: red from 90 s before arrival (60 s before gates drop) until gates are up, then
+  // fades over FADE_S (traffic still backed up); yellow when a train is within 5 minutes.
   // Strongest at the crossing, fading to nothing ARM_M along the street.
-  const GATE_LEAD_S = 30, YELLOW_S = 5 * 60, RED_S = 60, CLEAR_S = 20, FADE_S = 3 * 60, ARM_M = 250, PIECE_M = 20;
+  const GATE_LEAD_S = 30, GATE_LIFT_S = 30, STATION_M = 250, STATION_LEAD_S = 20, RED_LEAD_S = 60, YELLOW_S = 5 * 60;
+  const MARGIN_PER_MIN_S = 4, MARGIN_MAX_S = 60, MARGIN_SCHEDULE_S = 45;
+  const FADE_S = 3 * 60, ARM_M = 250, PIECE_M = 20;
   const HEAT_YELLOW = '#f2b600', HEAT_RED = '#e0352b';
   let lastW = 0;
   const crossings = (data.crossings ?? []).map((c) => {
@@ -393,27 +401,35 @@
   }
   function updateCrossings() {
     const t = nowS(), day = la(t), services = activeServices(day.ymd, day.dow), secs = t - day.midnight;
+    const ageMin = snapshotAt ? Math.max(0, (t - snapshotAt) / 60) : Infinity;
     for (const c of crossings) {
-      let next = Infinity, since = Infinity, nextLive = false; // seconds until the next train / since the last one cleared
+      let next = Infinity, nextLive = false, since = Infinity, redNow = false, blockedNow = false, nextRed = Infinity;
       for (const trip of data.trips) {
         if (!services.has(trip.service)) continue;
         const live = lastW > 0.5 && !!predicted[trip.id];
-        const stops = live ? predicted[trip.id].stops : trip.stops;
-        const at = timeAtDist(stops, c.d[trip.shape]);
+        const stops = live ? predicted[trip.id].stops : trip.stops, dc = c.d[trip.shape];
+        const at = timeAtDist(stops, dc);
         if (at == null) continue;
-        const rel = at - secs;
-        if (rel > -CLEAR_S) { if (rel < next) { next = rel; nextLive = live; } }
-        else since = Math.min(since, -rel - CLEAR_S);
+        let down = at - GATE_LEAD_S;
+        // station rule: platform just before this crossing (not the trip's first stop)
+        for (let i = 1; i < stops.length - 1; i++) if (stops[i][3] < dc && dc <= stops[i][3] + STATION_M) down = Math.min(down, stops[i][1] - STATION_LEAD_S);
+        const margin = live ? Math.min(MARGIN_MAX_S, MARGIN_PER_MIN_S * ageMin) : MARGIN_SCHEDULE_S;
+        const gd = down - margin - secs, gu = at + GATE_LIFT_S + margin - secs; // gates down / up, from now
+        const rs = gd - RED_LEAD_S;                                            // red starts, from now
+        if (gu <= 0) { since = Math.min(since, -gu); continue; }               // this train has cleared
+        if (rs <= 0) redNow = true; else nextRed = Math.min(nextRed, rs);
+        if (gd <= 0) blockedNow = true;
+        if (at - secs < next) { next = Math.max(0, at - secs); nextLive = live; }
       }
       // Every train counts, both directions: the strongest signal wins, so when two trains pass
       // close together the street stays red from the first until well after the second clears.
       const residual = since < FADE_S ? 1 - since / FADE_S : 0; // traffic still backed up
-      c.heat = next <= RED_S ? { color: HEAT_RED, a: 1 }
+      c.heat = redNow ? { color: HEAT_RED, a: 1 }
         : residual >= 0.5 ? { color: HEAT_RED, a: residual }
-        : next <= YELLOW_S ? { color: HEAT_YELLOW, a: 1 }
+        : nextRed <= YELLOW_S - RED_LEAD_S - GATE_LEAD_S ? { color: HEAT_YELLOW, a: 1 }
         : residual > 0 ? { color: HEAT_RED, a: residual }
         : null;
-      c.next = next; c.since = since; c.nextLive = nextLive; c.residual = residual;
+      Object.assign(c, { next, nextLive, since, residual, redNow, blockedNow });
     }
     // label: the next traffic event at the crossing you tapped, or else the one nearest you
     const target = selectedCrossing ?? nearestToMe();
@@ -421,8 +437,8 @@
       c.label = ''; c.sub = '';
       if (c !== target) continue;
       const n = c.next;
-      c.label = n <= GATE_LEAD_S ? 'Blocked now'
-        : c.residual >= 0.5 && n > RED_S ? 'Traffic clearing'
+      c.label = c.blockedNow ? 'Blocked now'
+        : c.residual >= 0.5 && !c.redNow ? 'Traffic clearing'
         : n < 3600 ? `Train in ${Math.max(1, Math.ceil(n / 60))} min`
         : n < Infinity ? `Next train ${clock.format(new Date((t + n) * 1000))}`
         : 'No more trains today';

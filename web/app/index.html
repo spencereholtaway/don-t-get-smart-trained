@@ -317,7 +317,9 @@
     // crossbuck sign standing upright above each crossing
     map.addLayer({ id: 'crossing-icons', type: 'symbol', source: 'crossings',
       layout: { 'icon-image': 'crossbuck', 'icon-anchor': 'bottom', 'icon-offset': [0, -6], 'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.55, 14, 0.9],
-        'icon-pitch-alignment': 'viewport', 'icon-rotation-alignment': 'viewport', 'icon-allow-overlap': true, 'icon-ignore-placement': true } });
+        'icon-pitch-alignment': 'viewport', 'icon-rotation-alignment': 'viewport',
+        // declutter: overlapping icons are hidden, the crossing nearest you wins
+        'icon-allow-overlap': false, 'symbol-sort-key': ['get', 'rank'] } });
     map.addLayer({ id: 'crossing-labels', type: 'symbol', source: 'crossings', filter: ['get', 'soon'],
       layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 13, 'text-anchor': 'top', 'text-offset': [0, 0.7], 'text-allow-overlap': false },
       paint: { 'text-color': css.getPropertyValue('--late').trim(), 'text-halo-color': dark.matches ? '#0f1411' : '#ffffff', 'text-halo-width': 2 } });
@@ -360,6 +362,10 @@
     return Math.hypot((c.lon - lon) * Math.cos(lat * Math.PI / 180), c.lat - lat) * 69.1;
   }
   function updateCrossings() {
+    // Only the crossing nearest you gets a time.
+    let nearest = null, rank = 0;
+    if (me) for (const c of crossings) { c.miles = milesFromMe(c); if (!nearest || c.miles < nearest.miles) nearest = c; }
+    for (const c of [...crossings].sort((a, b) => (a.miles ?? 0) - (b.miles ?? 0))) c.rank = rank++;
     const t = nowS(), day = la(t), services = activeServices(day.ymd, day.dow), secs = t - day.midnight;
     for (const c of crossings) {
       let next = Infinity;
@@ -369,13 +375,13 @@
         const at = timeAtDist(stops, c.d[trip.shape]);
         if (at != null && at - secs > -20) next = Math.min(next, at - secs);
       }
-      c.soon = next <= SOON_S && milesFromMe(c) <= NEAR_MILES;
+      c.soon = c === nearest && c.miles <= NEAR_MILES && next <= SOON_S;
       c.label = !c.soon ? '' : next <= GATE_LEAD_S ? 'Blocked now' : `Train in ${Math.ceil(next / 60)} min`;
     }
     map.getSource('crossings')?.setData(crossingsFC());
   }
   function crossingsFC() {
-    return { type: 'FeatureCollection', features: crossings.map((c) => ({ type: 'Feature', properties: { soon: c.soon, label: c.label }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } })) };
+    return { type: 'FeatureCollection', features: crossings.map((c) => ({ type: 'Feature', properties: { soon: c.soon, label: c.label, rank: c.rank ?? 0 }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } })) };
   }
   updateCrossings();
   setInterval(updateCrossings, 2000);

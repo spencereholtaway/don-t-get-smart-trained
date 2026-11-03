@@ -260,9 +260,10 @@
   const routeCoords = data.shapes[north].map((p) => [p[0], p[1]]);
   const bounds = routeCoords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(routeCoords[0], routeCoords[0]));
 
+  const VIEW_PITCH = 45; // default tilt
   const map = new maplibregl.Map({
     container: 'map', style: styleUrl(), bounds, fitBoundsOptions: { padding: { top: 40, bottom: 40, left: 30, right: 30 } },
-    pitch: 0, maxPitch: 70, minZoom: 7, attributionControl: { compact: true }, dragRotate: true, touchPitch: true,
+    pitch: VIEW_PITCH, maxPitch: 70, minZoom: 7, attributionControl: { compact: true }, dragRotate: true, touchPitch: true,
   });
   map.touchZoomRotate.enableRotation();
   dark.addEventListener('change', () => map.setStyle(styleUrl()));
@@ -530,10 +531,17 @@
       const t = nearestTrain();
       if (t) b.extend([t.lon, t.lat]);
       else { b.extend([n.s.lon, n.s.lat]); if (crossings.length) { const c = nearestCrossing(lon, lat); b.extend([c.lon, c.lat]); } }
-      map.fitBounds(b, { padding: { top: 80, bottom: 100, left: 50, right: 50 }, maxZoom: 12.5, pitch: 0, bearing: 0, duration: 1600 });
+      fitTilted(b, { top: 80, bottom: 100, left: 50, right: 50 }, 12.5);
     } else {
-      map.fitBounds(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds([lon, lat], [lon, lat])), { padding: 40, pitch: 0, bearing: 0, duration: 1600 });
+      fitTilted(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds([lon, lat], [lon, lat])), 40);
     }
+  }
+  // Frame the bounds as a flat view would, then tilt: same catchment, eased out a little so the
+  // near edge of the tilted view (which magnifies) doesn't push anything off screen.
+  function fitTilted(b, padding, maxZoom = 22) {
+    const cam = map.cameraForBounds(b, { padding, maxZoom, bearing: 0 });
+    if (!cam) return;
+    map.easeTo({ center: cam.center, zoom: cam.zoom - 0.35, pitch: VIEW_PITCH, bearing: 0, duration: 1600 });
   }
   function nearestCrossing(lon, lat) {
     let best = null, bd = Infinity;

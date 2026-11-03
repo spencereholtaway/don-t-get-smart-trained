@@ -31,6 +31,11 @@
     width: 40px; height: 40px; border-radius: 50%; border: 0; padding: 0; display: grid; place-items: center; cursor: pointer;
     background: var(--panel); color: #2f7de1; box-shadow: 0 2px 10px rgba(0,0,0,.18); -webkit-tap-highlight-color: transparent; }
   #follow { right: 64px; color: var(--accent); }
+  #info { position: absolute; right: 14px; top: calc(env(safe-area-inset-top, 0px) + 14px); z-index: 2;
+    width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--panel); color: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,.18); -webkit-tap-highlight-color: transparent; }
+  #info svg { width: 22px; height: 22px; }
+  #info:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   #follow[aria-pressed="true"] { background: var(--accent); color: var(--panel); }
   #locate svg, #follow svg { width: 20px; height: 20px; }
   #locate.busy svg { animation: spin 1.2s linear infinite; }
@@ -45,6 +50,10 @@
 <body>
 <div id="app">
   <div id="map" role="region" aria-label="Map of SMART stations and trains"></div>
+
+  <a id="info" href="about.html" aria-label="Where the data comes from" title="Where the data comes from">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><circle cx="12" cy="7.5" r=".6" fill="currentColor"/></svg>
+  </a>
 
   <button id="follow" aria-pressed="false" aria-label="Follow the nearest train" title="Follow the nearest train">
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 2h8a4 4 0 0 1 4 4v9a3 3 0 0 1-2.2 2.9L20 21h-2.3l-1.9-3H8.2l-1.9 3H4l2.2-3.1A3 3 0 0 1 4 15V6a4 4 0 0 1 4-4zm-1.5 5v4h11V7h-11zm1.25 6.5a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5zm8.5 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5z"/></svg>

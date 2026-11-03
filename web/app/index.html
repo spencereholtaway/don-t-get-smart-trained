@@ -243,25 +243,6 @@
     return { trains: out, w, age };
   }
 
-  // ---------- station arrivals ----------
-  function arrivalsAt(stationId, t) {
-    const d = la(t), secs = t - d.midnight, services = activeServices(d.ymd, d.dow);
-    const age = t - snapshotAt, live = la(snapshotAt).ymd === d.ymd && age > -60 && age < STALE_S;
-    const rows = [];
-    for (const trip of data.trips) {
-      if (!services.has(trip.service)) continue;
-      const i = trip.stops.findIndex((s) => s[0] === stationId);
-      if (i < 0 || i === trip.stops.length - 1) continue; // skip where the trip ends
-      const sched = trip.stops[i][2];
-      const pred = live && predicted[trip.id] ? predicted[trip.id].stops[i][2] : null;
-      const when = pred ?? sched;
-      if (when < secs - 30) continue;
-      rows.push({ trip, sched, pred, when });
-    }
-    rows.sort((a, b) => a.when - b.when);
-    return { live, rows, midnight: d.midnight };
-  }
-
   // ---------- map ----------
   const dark = matchMedia('(prefers-color-scheme: dark)');
   const styleUrl = () => `https://tiles.openfreemap.org/styles/${dark.matches ? 'dark' : 'positron'}`;
@@ -326,72 +307,14 @@
     map.addSource('me', { type: 'geojson', data: { type: 'FeatureCollection', features: me ? [me] : [] } });
     map.addLayer({ id: 'me-pulse', type: 'circle', source: 'me', paint: { 'circle-radius': 10, 'circle-color': '#2f7de1', 'circle-opacity': 0.2, 'circle-pitch-alignment': 'map' } });
     map.addLayer({ id: 'me', type: 'circle', source: 'me', paint: { 'circle-radius': 6, 'circle-color': '#2f7de1', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2, 'circle-pitch-alignment': 'map' } });
-    if (selected) map.setFeatureState({ source: 'stations', id: +selected }, { selected: true });
   }
-  let me = null, selected = null;
+  let me = null;
   map.on('style.load', addAppLayers);
 
   // ---------- interactions ----------
-  map.on('click', 'stations', (e) => selectStation(e.features[0].properties.id, true));
-  map.on('click', 'trains', (e) => {
-    const f = e.features[0].properties;
-    showTrain(f.trip);
-  });
-  for (const l of ['stations', 'trains']) {
-    map.on('mouseenter', l, () => (map.getCanvas().style.cursor = 'pointer'));
-    map.on('mouseleave', l, () => (map.getCanvas().style.cursor = ''));
-  }
-
   const sheet = document.getElementById('sheet');
-  function selectStation(id, fly) {
-    if (selected) map.setFeatureState({ source: 'stations', id: +selected }, { selected: false });
-    selected = id; sheetKind = 'station';
-    map.setFeatureState({ source: 'stations', id: +id }, { selected: true });
-    const s = stationsById[id];
-    if (fly) map.flyTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 13.5), pitch: 50, duration: 1400, essential: true, offset: [0, -80] });
-    renderSheet();
-  }
-  let sheetKind = null, sheetTrip = null;
-  function showTrain(tripId) { sheetKind = 'train'; sheetTrip = tripId; renderSheet(); }
-  function closeSheet() {
-    if (selected) map.setFeatureState({ source: 'stations', id: +selected }, { selected: false });
-    selected = null; sheetKind = null; sheet.hidden = true;
-  }
-
-  function statusTag(delay) {
-    if (delay == null) return '<span class="tag sched">Scheduled</span>';
-    const m = Math.round(delay / 60);
-    if (Math.abs(delay) < 60) return '<span class="tag on">On time</span>';
-    return delay > 0 ? `<span class="tag late">${m} min late</span>` : `<span class="tag early">${-m} min early</span>`;
-  }
+  function closeSheet() { sheet.hidden = true; }
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-
-  function renderSheet() {
-    if (!sheetKind) return;
-    const t = nowS();
-    if (sheetKind === 'station') {
-      const s = stationsById[selected];
-      const { live, rows, midnight } = arrivalsAt(selected, t);
-      const group = (dir, label) => {
-        const list = rows.filter((r) => r.trip.dir === dir).slice(0, 3);
-        if (!list.length) return `<h3>${label}</h3><div class="empty">No more trains today.</div>`;
-        return `<h3>${label}</h3>` + list.map((r) => `<div class="row"><span class="t">${hm(midnight + r.when)}</span><span class="trip">${esc(r.trip.name)}${r.pred != null && Math.abs(r.pred - r.sched) >= 60 ? ` · sched ${hm(midnight + r.sched)}` : ''}</span>${statusTag(r.pred != null ? r.pred - r.sched : null)}</div>`).join('');
-      };
-      sheet.innerHTML = `<button class="close" aria-label="Close">×</button><h2>${esc(s.name)}</h2>
-        <div class="meta">${live ? 'Predicted times from live data' : 'Timetable times (no recent live data)'}</div>
-        ${group(0, 'Southbound to Larkspur')}${group(1, 'Northbound to Windsor')}`;
-    } else {
-      const trip = data.trips.find((x) => x.id === sheetTrip);
-      const p = predicted[trip.id];
-      const state = lastFrame.trains.find((x) => x.trip.id === trip.id);
-      const where = state?.at ? `At ${stationsById[state.at]?.name}` : state?.next ? `Next stop ${stationsById[state.next]?.name}` : 'Not running now';
-      sheet.innerHTML = `<button class="close" aria-label="Close">×</button><h2>${esc(trip.name)} to ${esc(trip.headsign)}</h2>
-        <div class="meta">${esc(where)}${p?.vehicle ? ` · train ${esc(p.vehicle)}` : ''}</div>
-        <div class="note">${state?.live ? `Position from live predictions (${statusTag(p.delayNow).replace(/<[^>]+>/g, '').toLowerCase()} at last update).` : 'Estimated position from the timetable.'}</div>`;
-    }
-    sheet.hidden = false;
-    sheet.querySelector('.close').onclick = closeSheet;
-  }
 
   // location
   const locateBtn = document.getElementById('locate');
@@ -401,7 +324,7 @@
     return { s: best, miles: bd * 69.1 };
   }
   function locate(fly) {
-    if (!navigator.geolocation) return showLocMsg('This browser can’t share your location. Tap a station instead.');
+    if (!navigator.geolocation) return showLocMsg('This browser can’t share your location. ');
     locateBtn.textContent = 'Finding…';
     const onPos = (pos, refine) => {
       if (!map.getSource('me')) return map.once('style.load', () => onPos(pos, refine)); // map style still loading
@@ -413,7 +336,6 @@
       if (fly && !refine) {
         if (n.miles < 30) {
           map.fitBounds(new maplibregl.LngLatBounds([lon, lat], [lon, lat]).extend([n.s.lon, n.s.lat]), { padding: { top: 120, bottom: 300, left: 60, right: 60 }, maxZoom: 14, pitch: 50, duration: 1600 });
-          selectStation(n.s.id, false);
         } else {
           map.fitBounds(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds([lon, lat], [lon, lat])), { padding: { top: 100, bottom: 160, left: 30, right: 30 }, pitch: 30, duration: 1600 });
           showLocMsg(`You’re about ${Math.round(n.miles)} miles from the nearest SMART station (${n.s.name}).`);
@@ -424,9 +346,9 @@
       locateBtn.textContent = 'Find me';
       const mac = /Macintosh/.test(navigator.userAgent);
       const msg = err.code === 1
-        ? (mac ? 'Location is blocked. If you allowed it in the browser, also turn it on for this browser in macOS System Settings › Privacy & Security › Location Services.' : 'Location is blocked for this site. Allow it in your browser settings, or tap a station.')
-        : err.code === 3 ? 'Finding your location took too long. Tap Find me to try again, or tap a station.'
-        : (mac ? 'Your Mac couldn’t find its location. Check that Wi‑Fi is on and that Location Services is on for this browser in System Settings.' : 'Your device couldn’t find its location. Tap Find me to try again, or tap a station.');
+        ? (mac ? 'Location is blocked. If you allowed it in the browser, also turn it on for this browser in macOS System Settings › Privacy & Security › Location Services.' : 'Location is blocked for this site. Allow it in your browser settings.')
+        : err.code === 3 ? 'Finding your location took too long. Tap Find me to try again.'
+        : (mac ? 'Your Mac couldn’t find its location. Check that Wi‑Fi is on and that Location Services is on for this browser in System Settings.' : 'Your device couldn’t find its location. Tap Find me to try again.');
       showLocMsg(msg);
     };
     // Fast, low-accuracy fix first (works on Macs without GPS); a high-accuracy fix refines it on phones.
@@ -435,7 +357,7 @@
       navigator.geolocation.getCurrentPosition((p2) => onPos(p2, true), () => {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
     }, fail, { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 });
   }
-  function showLocMsg(msg) { sheetKind = null; sheet.innerHTML = `<button class="close" aria-label="Close">×</button><div class="meta" style="margin:0">${esc(msg)}</div>`; sheet.hidden = false; sheet.querySelector('.close').onclick = closeSheet; }
+  function showLocMsg(msg) { sheet.innerHTML = `<button class="close" aria-label="Close">×</button><div class="meta" style="margin:0">${esc(msg)}</div>`; sheet.hidden = false; sheet.querySelector('.close').onclick = closeSheet; }
   locateBtn.onclick = () => locate(true);
   locate(true);
 
@@ -444,7 +366,7 @@
   if (rt.alerts.length) { alertsEl.innerHTML = rt.alerts.map((a) => `<b>${esc(a.header)}</b>${a.description ? `<br>${esc(a.description)}` : ''}`).join('<hr>'); alertsEl.hidden = false; }
 
   // ---------- frame loop ----------
-  let lastFrame = { trains: [] }, lastSheet = 0, lastStatus = 0;
+  let lastFrame = { trains: [] }, lastStatus = 0;
   const statusMain = document.getElementById('statusMain'), statusSub = document.getElementById('statusSub'), statusDot = document.getElementById('statusDot');
   function frame() {
     const t = nowS();
@@ -462,7 +384,6 @@
       const snap = `Live data from ${dayFmt.format(new Date(snapshotAt * 1000))} ${hm(snapshotAt)}`;
       statusSub.textContent = `${snap} (${ago(Date.now() / 1000 - snapshotAt)}). Not updating live yet.`;
     }
-    if (sheetKind && Date.now() - lastSheet > 1000) { lastSheet = Date.now(); renderSheet(); }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

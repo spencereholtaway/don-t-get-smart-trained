@@ -330,16 +330,16 @@
       paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 4, 14, 8], 'circle-color': dark.matches ? '#0f1411' : '#ffffff',
         'circle-stroke-color': accent, 'circle-stroke-width': ['case', ['boolean', ['feature-state', 'selected'], false], 4, 2.5], 'circle-pitch-alignment': 'map' } });
     map.addLayer({ id: 'station-labels', type: 'symbol', source: 'stations', minzoom: 9.2,
-      layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 12, 'text-offset': [0.9, 0], 'text-anchor': 'left', 'text-optional': true },
+      layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 12, 'text-variable-anchor': ['left', 'right'], 'text-radial-offset': 0.9, 'text-justify': 'auto', 'text-optional': true },
       paint: { 'text-color': css.getPropertyValue('--fg').trim(), 'text-halo-color': dark.matches ? '#0f1411' : '#ffffff', 'text-halo-width': 1.5 } });
 
     map.addSource('gps', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'gps', type: 'circle', source: 'gps', paint: { 'circle-radius': 6, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': css.getPropertyValue('--early').trim(), 'circle-stroke-width': 2, 'circle-pitch-alignment': 'map' } });
 
     map.addSource('trains', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addLayer({ id: 'train-halo', type: 'circle', source: 'trains', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 9, 14, 15], 'circle-color': accent, 'circle-opacity': ['case', ['get', 'live'], 0.35, 0.12], 'circle-pitch-alignment': 'map', 'circle-blur': 0.4 } });
+    map.addLayer({ id: 'train-halo', type: 'circle', source: 'trains', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 12, 14, 18], 'circle-color': accent, 'circle-opacity': ['case', ['get', 'live'], 0.35, 0.12], 'circle-pitch-alignment': 'map', 'circle-blur': 0.4 } });
     map.addLayer({ id: 'trains', type: 'symbol', source: 'trains',
-      layout: { 'icon-image': 'train', 'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.6, 14, 1], 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
+      layout: { 'icon-image': 'train', 'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.9, 14, 1.2], 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
       paint: { 'icon-opacity': ['case', ['get', 'live'], 1, 0.55] } });
 
     map.addSource('me', { type: 'geojson', data: { type: 'FeatureCollection', features: me ? [me] : [] } });
@@ -422,23 +422,41 @@
   function locate(fly) {
     if (!navigator.geolocation) return showLocMsg('This browser can’t share your location. Tap a station instead.');
     locateBtn.textContent = 'Finding…';
-    navigator.geolocation.getCurrentPosition((pos) => {
+    const onPos = (pos, refine) => {
+      if (!map.getSource('me')) return map.once('idle', () => onPos(pos, refine)); // map style still loading
       locateBtn.textContent = 'Find me';
       const { longitude: lon, latitude: lat } = pos.coords;
       me = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} };
       map.getSource('me')?.setData({ type: 'FeatureCollection', features: [me] });
       const n = nearestStation(lon, lat);
-      if (fly) {
+      if (fly && !refine) {
         if (n.miles < 30) {
           map.fitBounds(new maplibregl.LngLatBounds([lon, lat], [lon, lat]).extend([n.s.lon, n.s.lat]), { padding: { top: 120, bottom: 300, left: 60, right: 60 }, maxZoom: 14, pitch: 50, duration: 1600 });
           selectStation(n.s.id, false);
-        } else showLocMsg(`You’re about ${Math.round(n.miles)} miles from the nearest SMART station (${n.s.name}).`);
+        } else {
+          map.fitBounds(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds([lon, lat], [lon, lat])), { padding: { top: 100, bottom: 160, left: 30, right: 30 }, pitch: 30, duration: 1600 });
+          showLocMsg(`You’re about ${Math.round(n.miles)} miles from the nearest SMART station (${n.s.name}).`);
+        }
       }
-    }, () => { locateBtn.textContent = 'Find me'; showLocMsg('Location is off. Tap a station to see its next trains.'); }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+    };
+    const fail = (err) => {
+      locateBtn.textContent = 'Find me';
+      const mac = /Macintosh/.test(navigator.userAgent);
+      const msg = err.code === 1
+        ? (mac ? 'Location is blocked. If you allowed it in the browser, also turn it on for this browser in macOS System Settings › Privacy & Security › Location Services.' : 'Location is blocked for this site. Allow it in your browser settings, or tap a station.')
+        : err.code === 3 ? 'Finding your location took too long. Tap Find me to try again, or tap a station.'
+        : (mac ? 'Your Mac couldn’t find its location. Check that Wi‑Fi is on and that Location Services is on for this browser in System Settings.' : 'Your device couldn’t find its location. Tap Find me to try again, or tap a station.');
+      showLocMsg(msg);
+    };
+    // Fast, low-accuracy fix first (works on Macs without GPS); a high-accuracy fix refines it on phones.
+    navigator.geolocation.getCurrentPosition((pos) => {
+      onPos(pos);
+      navigator.geolocation.getCurrentPosition((p2) => onPos(p2, true), () => {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+    }, fail, { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 });
   }
   function showLocMsg(msg) { sheetKind = null; sheet.innerHTML = `<button class="close" aria-label="Close">×</button><div class="meta" style="margin:0">${esc(msg)}</div>`; sheet.hidden = false; sheet.querySelector('.close').onclick = closeSheet; }
   locateBtn.onclick = () => locate(true);
-  map.once('load', () => locate(true));
+  locate(true);
 
   // clock controls
   const modeNow = document.getElementById('modeNow'), modeReplay = document.getElementById('modeReplay');

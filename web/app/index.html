@@ -27,10 +27,12 @@
   html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.35 var(--font); }
   #app { position: relative; height: 100%; max-width: 480px; margin: 0 auto; overflow: hidden; }
   #map { position: absolute; inset: 0; }
-  #locate { position: absolute; right: 14px; bottom: calc(env(safe-area-inset-bottom, 0px) + 28px); z-index: 2;
+  #locate, #follow { position: absolute; right: 14px; bottom: calc(env(safe-area-inset-bottom, 0px) + 28px); z-index: 2;
     width: 40px; height: 40px; border-radius: 50%; border: 0; padding: 0; display: grid; place-items: center; cursor: pointer;
     background: var(--panel); color: #2f7de1; box-shadow: 0 2px 10px rgba(0,0,0,.18); -webkit-tap-highlight-color: transparent; }
-  #locate svg { width: 20px; height: 20px; }
+  #follow { right: 64px; color: var(--accent); }
+  #follow[aria-pressed="true"] { background: var(--accent); color: var(--panel); }
+  #locate svg, #follow svg { width: 20px; height: 20px; }
   #locate.busy svg { animation: spin 1.2s linear infinite; }
   #locate.error { color: var(--late); }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -44,6 +46,9 @@
 <div id="app">
   <div id="map" role="region" aria-label="Map of SMART stations and trains"></div>
 
+  <button id="follow" aria-pressed="false" aria-label="Follow the nearest train" title="Follow the nearest train">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 2h8a4 4 0 0 1 4 4v9a3 3 0 0 1-2.2 2.9L20 21h-2.3l-1.9-3H8.2l-1.9 3H4l2.2-3.1A3 3 0 0 1 4 15V6a4 4 0 0 1 4-4zm-1.5 5v4h11V7h-11zm1.25 6.5a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5zm8.5 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5z"/></svg>
+  </button>
   <button id="locate" aria-label="Show my location" title="Show my location">
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.6 2.4 2.9 10.2c-.8.3-.7 1.5.1 1.7l7.5 1.6 1.6 7.5c.2.8 1.4.9 1.7.1l7.8-18.7z"/></svg>
   </button>
@@ -253,6 +258,16 @@
   map.touchZoomRotate.enableRotation();
   dark.addEventListener('change', () => map.setStyle(styleUrl()));
 
+  function arrowIcon() {
+    const s = 40, c = document.createElement('canvas'); c.width = c.height = s;
+    const g = c.getContext('2d');
+    g.translate(s / 2, s / 2);
+    g.beginPath(); g.moveTo(0, -14); g.lineTo(12, 10); g.lineTo(0, 4); g.lineTo(-12, 10); g.closePath();
+    g.lineJoin = 'round'; g.lineWidth = 4; g.strokeStyle = dark.matches ? '#0f1411' : '#ffffff'; g.stroke();
+    g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(); g.fill();
+    return { width: s, height: s, data: g.getImageData(0, 0, s, s).data };
+  }
+
   function addAppLayers() {
     const css = getComputedStyle(document.documentElement);
     const accent = css.getPropertyValue('--accent').trim();
@@ -287,11 +302,31 @@
     // a small dot on the track at each crossing
     // (red or yellow when that crossing is the one heating its street)
     map.addSource('crossings', { type: 'geojson', data: crossingDotsFC() });
+    // a ring pulsing out of each yellow or red crossing
+    map.addLayer({ id: 'crossing-pulse', type: 'circle', source: 'crossings', filter: ['has', 'color'],
+      paint: { 'circle-color': ['get', 'color'], 'circle-radius': 6, 'circle-opacity': 0.25, 'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.8, 'circle-pitch-alignment': 'map' } });
     map.addLayer({ id: 'crossings', type: 'circle', source: 'crossings',
       paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 2, 15, 5], 'circle-color': ['coalesce', ['get', 'color'], css.getPropertyValue('--muted').trim()],
         'circle-stroke-color': dark.matches ? '#0f1411' : '#ffffff', 'circle-stroke-width': 1.5, 'circle-pitch-alignment': 'map' } });
 
-    map.addSource('trains', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    // next traffic event at your nearest crossing, or the one you tapped
+    map.addLayer({ id: 'crossing-labels', type: 'symbol', source: 'crossings', filter: ['!=', ['get', 'label'], ''],
+      layout: { 'text-field': ['format', ['get', 'label'], {}, '\n', {}, ['get', 'sub'], { 'font-scale': 0.8 }], 'text-font': ['Noto Sans Bold'], 'text-size': 13,
+        'text-anchor': 'top', 'text-offset': [0, 0.8], 'text-allow-overlap': true, 'text-ignore-placement': true },
+      paint: { 'text-color': css.getPropertyValue('--fg').trim(), 'text-halo-color': dark.matches ? '#0f1411' : '#ffffff', 'text-halo-width': 2 } });
+
+    // trains change every frame: shallow tiling keeps each update cheap
+    map.addSource('trains', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, maxzoom: 15, tolerance: 0, buffer: 32 });
+    map.on('sourcedata', (e) => { if (e.sourceId === 'trains' && e.isSourceLoaded) trainsBusy = false; });
+    // pulse and direction arrow, for when you're zoomed out (they fade away at street zoom)
+    map.addSource('train-marks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, maxzoom: 14 });
+    map.addLayer({ id: 'train-pulse', type: 'circle', source: 'train-marks', filter: ['==', ['get', 'kind'], 'pulse'],
+      paint: { 'circle-color': accent, 'circle-radius': 14, 'circle-opacity': 0.2, 'circle-stroke-color': accent, 'circle-stroke-width': 2.5, 'circle-stroke-opacity': 0.8, 'circle-pitch-alignment': 'viewport' } });
+    if (map.hasImage('arrow')) map.removeImage('arrow');
+    map.addImage('arrow', arrowIcon(), { pixelRatio: 2 });
+    map.addLayer({ id: 'train-arrows', type: 'symbol', source: 'train-marks', filter: ['==', ['get', 'kind'], 'arrow'],
+      layout: { 'icon-image': 'arrow', 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
+      paint: { 'icon-opacity': ['interpolate', ['linear'], ['zoom'], 14.5, 1, 16, 0] } });
     // headlight glow ahead of each train (dark mode only), under the 3D trains
     map.addSource('headlights', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'headlights', type: 'circle', source: 'headlights', layout: { visibility: dark.matches ? 'visible' : 'none' },
@@ -316,7 +351,7 @@
   //   train within 5 min: yellow; within 1 min or gates down: red;
   //   after the train clears, red fades out over FADE_S (traffic still backed up).
   // Strongest at the crossing, fading to nothing ARM_M along the street.
-  const YELLOW_S = 5 * 60, RED_S = 60, CLEAR_S = 20, FADE_S = 3 * 60, ARM_M = 250, PIECE_M = 20;
+  const GATE_LEAD_S = 30, YELLOW_S = 5 * 60, RED_S = 60, CLEAR_S = 20, FADE_S = 3 * 60, ARM_M = 250, PIECE_M = 20;
   const HEAT_YELLOW = '#f2b600', HEAT_RED = '#e0352b';
   let lastW = 0;
   const crossings = (data.crossings ?? []).map((c) => {
@@ -349,17 +384,25 @@
     }
     return null;
   }
+  let selectedCrossing = null;
+  const clock = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
+  function nearestToMe() {
+    if (!me) return null;
+    const [lon, lat] = me.geometry.coordinates;
+    return nearestCrossing(lon, lat);
+  }
   function updateCrossings() {
     const t = nowS(), day = la(t), services = activeServices(day.ymd, day.dow), secs = t - day.midnight;
     for (const c of crossings) {
-      let next = Infinity, since = Infinity; // seconds until the next train / since the last one cleared
+      let next = Infinity, since = Infinity, nextLive = false; // seconds until the next train / since the last one cleared
       for (const trip of data.trips) {
         if (!services.has(trip.service)) continue;
-        const stops = lastW > 0.5 && predicted[trip.id] ? predicted[trip.id].stops : trip.stops;
+        const live = lastW > 0.5 && !!predicted[trip.id];
+        const stops = live ? predicted[trip.id].stops : trip.stops;
         const at = timeAtDist(stops, c.d[trip.shape]);
         if (at == null) continue;
         const rel = at - secs;
-        if (rel > -CLEAR_S) next = Math.min(next, rel);
+        if (rel > -CLEAR_S) { if (rel < next) { next = rel; nextLive = live; } }
         else since = Math.min(since, -rel - CLEAR_S);
       }
       // Every train counts, both directions: the strongest signal wins, so when two trains pass
@@ -370,13 +413,26 @@
         : next <= YELLOW_S ? { color: HEAT_YELLOW, a: 1 }
         : residual > 0 ? { color: HEAT_RED, a: residual }
         : null;
-      c.next = next; c.since = since;
+      c.next = next; c.since = since; c.nextLive = nextLive; c.residual = residual;
+    }
+    // label: the next traffic event at the crossing you tapped, or else the one nearest you
+    const target = selectedCrossing ?? nearestToMe();
+    for (const c of crossings) {
+      c.label = ''; c.sub = '';
+      if (c !== target) continue;
+      const n = c.next;
+      c.label = n <= GATE_LEAD_S ? 'Blocked now'
+        : c.residual >= 0.5 && n > RED_S ? 'Traffic clearing'
+        : n < 3600 ? `Train in ${Math.max(1, Math.ceil(n / 60))} min`
+        : n < Infinity ? `Next train ${clock.format(new Date((t + n) * 1000))}`
+        : 'No more trains today';
+      c.sub = n < Infinity && !c.nextLive ? 'scheduled' : '';
     }
     map.getSource('heat')?.setData(heatFC());
     map.getSource('crossings')?.setData(crossingDotsFC());
   }
   function crossingDotsFC() {
-    return { type: 'FeatureCollection', features: crossings.map((c) => ({ type: 'Feature', properties: { color: c.heat?.color ?? null }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } })) };
+    return { type: 'FeatureCollection', features: crossings.map((c) => ({ type: 'Feature', properties: { id: c.id, ...(c.heat ? { color: c.heat.color } : {}), label: c.label ?? '', sub: c.sub ?? '' }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } })) };
   }
   function heatFC() {
     const features = [];
@@ -387,7 +443,7 @@
     return { type: 'FeatureCollection', features };
   }
   updateCrossings();
-  window.__smart = { crossings, updateCrossings, timeAtDist, trips: data.trips, activeServices }; // for automated checks
+  window.__smart = { crossings, updateCrossings, timeAtDist, trips: data.trips, activeServices, map }; // for automated checks
   setInterval(updateCrossings, 1000);
   map.on('style.load', addAppLayers);
 
@@ -439,6 +495,35 @@
     return best;
   }
   locateBtn.onclick = () => locate(true);
+
+  // tap a crossing to see its next traffic event; tap elsewhere to go back to the one nearest you
+  map.on('click', (e) => {
+    const r = 18, hits = map.getLayer('crossings') ? map.queryRenderedFeatures([[e.point.x - r, e.point.y - r], [e.point.x + r, e.point.y + r]], { layers: ['crossings'] }) : [];
+    const hit = hits.length ? crossings.find((c) => c.id === hits[0].properties.id) : null;
+    selectedCrossing = hit && hit !== selectedCrossing ? hit : null;
+    updateCrossings();
+  });
+
+  // follow the nearest train: keep it and you in view until you move the map yourself
+  const followBtn = document.getElementById('follow');
+  let following = false;
+  function nearestTrain() {
+    const [lon, lat] = me ? me.geometry.coordinates : map.getCenter().toArray();
+    let best = null, bd = Infinity;
+    for (const x of lastTrains) { const d = Math.hypot((x.lon - lon) * Math.cos(lat * Math.PI / 180), x.lat - lat); if (d < bd) { bd = d; best = x; } }
+    return best;
+  }
+  function fitFollow(first) {
+    const t = nearestTrain();
+    if (!t) return;
+    const b = new maplibregl.LngLatBounds([t.lon, t.lat], [t.lon, t.lat]);
+    if (me) b.extend(me.geometry.coordinates);
+    map.fitBounds(b, { padding: { top: 110, bottom: 130, left: 70, right: 70 }, maxZoom: 16, pitch: map.getPitch(), bearing: map.getBearing(), duration: first ? 1400 : 1000 });
+  }
+  function setFollowing(on) { following = on; followBtn.setAttribute('aria-pressed', String(on)); if (on) { if (!me) locate(false); fitFollow(true); } }
+  followBtn.onclick = () => setFollowing(!following);
+  setInterval(() => { if (following && !map.isMoving()) fitFollow(false); }, 1500);
+  for (const ev of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart']) map.on(ev, (e) => { if (following && e.originalEvent) setFollowing(false); });
   locate(true);
 
   // ---------- live data ----------
@@ -462,13 +547,14 @@
   // angle against each other like real ones. Length is true to scale from zoom 16 in (below that
   // the train grows so it stays the same size on screen); width and height are drawn 1.8x so the
   // cars read at phone size. In dark mode the windows are lit and the headlights glow.
-  const CAR_M = 26, GAP_M = 1, WIDTH_M = 3, TRUCK_M = 4, NOSE_M = 2.5, CARS = 2, CHUNK = 1.8;
-  // livery bands, bottom to top: [base m, top m, color, dark-mode color]
-  const BANDS = [[0.6, 1.7, '#2f7a3e', '#2f7a3e'], [1.7, 2.3, '#c3c8cb', '#a9afb3'], [2.3, 3.2, '#2a3238', '#ffd98a'], [3.2, 4.2, '#c3c8cb', '#a9afb3']];
-  let headlights = [];
+  const CAR_M = 26, GAP_M = 1, WIDTH_M = 3, TRUCK_M = 4, NOSE_M = 2.6, CARS = 2, CHUNK = 1.8;
+  let headlights = [], marks = [], trainsBusy = false, trainsSentAt = 0, lastTrains = [];
   function trainFeatures(trains) {
     const k = Math.max(1, 2 ** (16 - map.getZoom())), kw = k * CHUNK, feats = [];
-    headlights = [];
+    const D = dark.matches;
+    const C = { green: '#2f7a3e', body: D ? '#a9afb3' : '#cdd2d5', glass: D ? '#ffd98a' : '#252c32', windshield: D ? '#3a4248' : '#1b2126',
+      door: D ? '#7a8287' : '#8a9399', under: '#2b2f31', equip: D ? '#80878b' : '#a3aaae', head: '#fff4c0', tail: '#d0352c' };
+    headlights = []; marks = [];
     for (const x of trains) {
       for (let i = 0; i < CARS; i++) {
         const dF = x.dist - i * (CAR_M + GAP_M) * k, dR = dF - CAR_M * k;
@@ -476,18 +562,50 @@
         const ky = 110540, kx = 111320 * Math.cos(a.lat * Math.PI / 180);
         let ux = (a.lon - b.lon) * kx, uy = (a.lat - b.lat) * ky;
         const len = Math.hypot(ux, uy) || 1; ux /= len; uy /= len;
-        const px = uy, py = -ux, over = TRUCK_M * k, hw = WIDTH_M / 2 * kw, nose = NOSE_M * k, pinch = 0.55 * hw;
-        const at = (o, along, side) => [o.lon + (ux * along + px * side) / kx, o.lat + (uy * along + py * side) / ky];
-        const ring = [];
-        if (i === CARS - 1) ring.push(at(b, nose - over, -hw), at(b, -over, -pinch), at(b, -over, pinch), at(b, nose - over, hw)); // rear cab
-        else ring.push(at(b, -over, -hw), at(b, -over, hw));
-        if (i === 0) {
-          ring.push(at(a, over - nose, hw), at(a, over, pinch), at(a, over, -pinch), at(a, over - nose, -hw)); // front cab
-          headlights.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: at(a, over + 6 * k, 0) } });
+        const px = uy, py = -ux, mid = { lon: (a.lon + b.lon) / 2, lat: (a.lat + b.lat) / 2 };
+        // car-local coordinates: x along the car (meters, + toward the front), y across, from the center
+        const P = (al, sd) => [mid.lon + (ux * al * k + px * sd * kw) / kx, mid.lat + (uy * al * k + py * sd * kw) / ky];
+        const add = (ring, base, top, color) => feats.push({ type: 'Feature', properties: { color, b: base * kw, h: top * kw }, geometry: { type: 'Polygon', coordinates: [[...ring, ring[0]]] } });
+        const box = (x0, x1, y0, y1, base, top, color) => add([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)], base, top, color);
+        const half = CAR_M / 2, hw = WIDTH_M / 2, frontCab = i === 0, rearCab = i === CARS - 1;
+        const bx0 = rearCab ? -half + NOSE_M : -half, bx1 = frontCab ? half - NOSE_M : half;
+
+        // body: green skirt, grey body
+        box(bx0, bx1, -hw, hw, 1.0, 2.0, C.green);
+        box(bx0, bx1, -hw, hw, 2.0, 4.3, C.body);
+        // cab noses: tapered, with a dark windshield and lamps
+        for (const [cab, sg] of [[frontCab, 1], [rearCab, -1]]) {
+          if (!cab) continue;
+          const xa = sg * (half - NOSE_M), xb = sg * half, pinch = 0.6 * hw;
+          const ring = [P(xa, -hw), P(xb, -pinch), P(xb, pinch), P(xa, hw)];
+          add(ring, 1.0, 2.0, C.green); add(ring, 2.0, 2.5, C.body); add(ring, 2.5, 3.5, C.windshield); add(ring, 3.5, 4.1, C.body);
+          const lamp = sg > 0 ? C.head : C.tail;
+          for (const side of [-1, 1]) box(xb - sg * 0.35, xb + sg * 0.06, side * pinch * 0.45 - 0.22, side * pinch * 0.45 + 0.22, 1.3, 1.65, lamp);
+          if (sg > 0) {
+            headlights.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: P(half + 6, 0) } });
+            const bearing = (Math.atan2(ux, uy) * 180 / Math.PI + 360) % 360;
+            marks.push({ type: 'Feature', properties: { kind: 'pulse' }, geometry: { type: 'Point', coordinates: P(-half - GAP_M / 2, 0) } });
+            marks.push({ type: 'Feature', properties: { kind: 'arrow', bearing }, geometry: { type: 'Point', coordinates: P(half + 14, 0) } });
+          }
         }
-        else ring.push(at(a, over, hw), at(a, over, -hw));
-        ring.push(ring[0]);
-        for (const [base, top, light, darkColor] of BANDS) feats.push({ type: 'Feature', properties: { color: dark.matches ? darkColor : light, b: base * kw, h: top * kw }, geometry: { type: 'Polygon', coordinates: [ring] } });
+        // windows and doors on both sides, as thin panels on the outside of the body
+        const doors = [-half / 2, half / 2], DOOR_W = 1.5;
+        for (const side of [-1, 1]) {
+          const y0 = side * hw, y1 = side * (hw + 0.07);
+          for (const d of doors) box(d - DOOR_W / 2, d + DOOR_W / 2, y0, y1, 1.15, 3.7, C.door);
+          for (let wx = bx0 + 0.9; wx + 1.6 <= bx1 - 0.9; wx += 2.1) {
+            if (doors.some((d) => wx + 1.6 > d - DOOR_W / 2 - 0.3 && wx < d + DOOR_W / 2 + 0.3)) continue;
+            box(wx, wx + 1.6, y0, y1, 2.5, 3.35, C.glass);
+          }
+        }
+        // roof equipment
+        box(-half * 0.5, -half * 0.18, -hw * 0.55, hw * 0.55, 4.3, 4.85, C.equip);
+        box(half * 0.18, half * 0.5, -hw * 0.55, hw * 0.55, 4.3, 4.75, C.equip);
+        // underneath: two trucks (wheel sets) and the engine box
+        for (const tx of [half - TRUCK_M, -half + TRUCK_M]) box(tx - 1.4, tx + 1.4, -hw * 0.8, hw * 0.8, 0.15, 1.0, C.under);
+        box(-half * 0.3, half * 0.3, -hw * 0.7, hw * 0.7, 0.4, 1.0, C.under);
+        // gangway to the car ahead
+        if (i > 0) box(half, half + GAP_M, -hw * 0.7, hw * 0.7, 1.2, 4.0, C.under);
       }
     }
     return feats;
@@ -497,9 +615,29 @@
   function frame() {
     const { trains, w } = trainsAt(nowS());
     lastW = w;
+    lastTrains = trains;
+    // Send a new train frame only once the map has drawn the last one (or 250 ms passed);
+    // queuing updates faster than the map can draw them is what made trains jump.
     const src = map.getSource('trains');
-    if (src) src.setData({ type: 'FeatureCollection', features: trainFeatures(trains) });
-    if (dark.matches) map.getSource('headlights')?.setData({ type: 'FeatureCollection', features: headlights });
+    if (src && (!trainsBusy || performance.now() - trainsSentAt > 250)) {
+      trainsBusy = true; trainsSentAt = performance.now();
+      src.setData({ type: 'FeatureCollection', features: trainFeatures(trains) });
+      map.getSource('train-marks')?.setData({ type: 'FeatureCollection', features: marks });
+      if (dark.matches) map.getSource('headlights')?.setData({ type: 'FeatureCollection', features: headlights });
+    }
+    // pulses: trains (fade away at street zoom, where the 3D train is big enough) and hot crossings
+    const tp = (Date.now() % 2200) / 2200, ease = 1 - (1 - tp) ** 2;
+    if (map.getLayer('train-pulse')) {
+      map.setPaintProperty('train-pulse', 'circle-radius', 10 + 30 * ease);
+      map.setPaintProperty('train-pulse', 'circle-opacity', ['interpolate', ['linear'], ['zoom'], 15, 0.3 * (1 - tp), 16.5, 0]);
+      map.setPaintProperty('train-pulse', 'circle-stroke-opacity', ['interpolate', ['linear'], ['zoom'], 15, 0.9 * (1 - tp), 16.5, 0]);
+    }
+    const cp = (Date.now() % 1600) / 1600, cease = 1 - (1 - cp) ** 2;
+    if (map.getLayer('crossing-pulse')) {
+      map.setPaintProperty('crossing-pulse', 'circle-radius', 5 + 20 * cease);
+      map.setPaintProperty('crossing-pulse', 'circle-opacity', 0.3 * (1 - cp));
+      map.setPaintProperty('crossing-pulse', 'circle-stroke-opacity', 0.9 * (1 - cp));
+    }
     const pulse = 10 + 8 * ((Date.now() % 2000) / 2000);
     if (map.getLayer('me-pulse')) { map.setPaintProperty('me-pulse', 'circle-radius', pulse); map.setPaintProperty('me-pulse', 'circle-opacity', 0.3 * (1 - (pulse - 10) / 8)); }
     requestAnimationFrame(frame);

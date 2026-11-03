@@ -288,6 +288,16 @@
     map.addSource('gps', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'gps', type: 'circle', source: 'gps', paint: { 'circle-radius': 6, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': css.getPropertyValue('--early').trim(), 'circle-stroke-width': 2, 'circle-pitch-alignment': 'map' } });
 
+    // level crossings: quiet dots, with a label when a train will block one soon
+    map.addSource('crossings', { type: 'geojson', data: crossingsFC() });
+    map.addLayer({ id: 'crossings', type: 'circle', source: 'crossings',
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, ['case', ['get', 'soon'], 4, 2], 15, ['case', ['get', 'soon'], 8, 5]],
+        'circle-color': ['case', ['get', 'soon'], css.getPropertyValue('--late').trim(), css.getPropertyValue('--muted').trim()],
+        'circle-stroke-color': dark.matches ? '#0f1411' : '#ffffff', 'circle-stroke-width': 1.5, 'circle-pitch-alignment': 'map' } });
+    map.addLayer({ id: 'crossing-labels', type: 'symbol', source: 'crossings', filter: ['get', 'soon'],
+      layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 13, 'text-variable-anchor': ['top', 'bottom', 'left', 'right'], 'text-radial-offset': 0.8, 'text-allow-overlap': false },
+      paint: { 'text-color': css.getPropertyValue('--late').trim(), 'text-halo-color': dark.matches ? '#0f1411' : '#ffffff', 'text-halo-width': 2 } });
+
     map.addSource('trains', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'train-halo', type: 'circle', source: 'trains', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 12, 14, 18], 'circle-color': accent, 'circle-opacity': ['case', ['get', 'live'], 0.35, 0.12], 'circle-pitch-alignment': 'map', 'circle-blur': 0.4 } });
     map.addLayer({ id: 'trains', type: 'symbol', source: 'trains',
@@ -299,6 +309,67 @@
     map.addLayer({ id: 'me', type: 'circle', source: 'me', paint: { 'circle-radius': 6, 'circle-color': '#2f7de1', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2, 'circle-pitch-alignment': 'map' } });
   }
   let me = null;
+
+  // ---------- level crossings ----------
+  // OpenStreetMap level crossings, served (and cached) by the Worker. Keep the ones on the
+  // SMART track and note how far along each direction's track they are.
+  const API_BASE = LIVE_URL.replace(/\/realtime$/, '');
+  const NEAR_MILES = 5, SOON_S = 10 * 60, GATE_LEAD_S = 30;
+  let crossings = [], lastW = 0;
+  async function loadCrossings() {
+    for (let i = 0; i < 5 && !crossings.length; i++) {
+      try {
+        const r = await fetch(`${API_BASE}/crossings`);
+        if (r.ok) {
+          const { crossings: raw } = await r.json();
+          crossings = raw.map((c) => {
+            const d = {};
+            let onTrack = false;
+            for (const id of Object.keys(shapes)) { const p = projectOnShape(id, c.lon, c.lat); d[id] = p.d; if (p.meters < 25) onTrack = true; }
+            return onTrack ? { ...c, d, label: '', soon: false } : null;
+          }).filter(Boolean);
+          updateCrossings();
+          return;
+        }
+      } catch {}
+      await new Promise((r) => setTimeout(r, 30000));
+    }
+  }
+  // When does the train on this timeline reach distance dc? Seconds since service-day midnight.
+  function timeAtDist(stops, dc) {
+    for (let i = 0; i < stops.length - 1; i++) {
+      const a = stops[i], b = stops[i + 1];
+      if (dc < a[3] || dc > b[3]) continue;
+      if (dc === a[3]) return a[1];
+      return a[2] + profileInverse((dc - a[3]) / (b[3] - a[3] || 1)) * (b[1] - a[2]);
+    }
+    return null;
+  }
+  function milesFromMe(c) {
+    if (!me) return 0;
+    const [lon, lat] = me.geometry.coordinates;
+    return Math.hypot((c.lon - lon) * Math.cos(lat * Math.PI / 180), c.lat - lat) * 69.1;
+  }
+  function updateCrossings() {
+    const t = nowS(), day = la(t), services = activeServices(day.ymd, day.dow), secs = t - day.midnight;
+    for (const c of crossings) {
+      let next = Infinity;
+      for (const trip of data.trips) {
+        if (!services.has(trip.service)) continue;
+        const stops = lastW > 0.5 && predicted[trip.id] ? predicted[trip.id].stops : trip.stops;
+        const at = timeAtDist(stops, c.d[trip.shape]);
+        if (at != null && at - secs > -20) next = Math.min(next, at - secs);
+      }
+      c.soon = next <= SOON_S && milesFromMe(c) <= NEAR_MILES;
+      c.label = !c.soon ? '' : next <= GATE_LEAD_S ? 'Blocked now' : `Train in ${Math.ceil(next / 60)} min`;
+    }
+    map.getSource('crossings')?.setData(crossingsFC());
+  }
+  function crossingsFC() {
+    return { type: 'FeatureCollection', features: crossings.map((c) => ({ type: 'Feature', properties: { soon: c.soon, label: c.label }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } })) };
+  }
+  loadCrossings();
+  setInterval(updateCrossings, 2000);
   map.on('style.load', addAppLayers);
 
   // ---------- location ----------
@@ -355,7 +426,8 @@
 
   // ---------- frame loop ----------
   function frame() {
-    const { trains } = trainsAt(nowS());
+    const { trains, w } = trainsAt(nowS());
+    lastW = w;
     const src = map.getSource('trains');
     if (src) src.setData({ type: 'FeatureCollection', features: trains.map((x) => ({ type: 'Feature', properties: { trip: x.trip.id, bearing: x.bearing, live: x.live }, geometry: { type: 'Point', coordinates: [x.lon, x.lat] } })) });
     const pulse = 10 + 8 * ((Date.now() % 2000) / 2000);

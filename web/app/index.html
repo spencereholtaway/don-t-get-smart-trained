@@ -7,9 +7,9 @@
 <meta name="apple-mobile-web-app-title" content="don't get smart trained">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=2">
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=2">
-<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=2">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-warning.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-warning-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-warning-192.png">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <style>
   /* Full-bleed map in a phone-width column; controls float on top as quiet glass panels. */
@@ -459,8 +459,14 @@
     map.getSource('heat')?.setData(heatFC());
     map.getSource('crossings')?.setData(crossingDotsFC());
   }
+  // Pulse wave, once per PULSE_CYCLE_S: every train rings at the same moment, then the yellow and
+  // red crossings ring one after another in the order trains will block them (soonest first).
+  const PULSE_CYCLE_S = 5, TRAIN_RING_S = 2, CROSS_RING_S = 1.6, CROSS_START_S = 0.6, CROSS_SPAN_S = 2.4;
   function crossingDotsFC() {
-    return { type: 'FeatureCollection', features: crossings.map((c) => ({ type: 'Feature', properties: { id: c.id, ...(c.heat ? { color: c.heat.color } : {}), label: c.label ?? '', sub: c.sub ?? '' }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } })) };
+    const hot = crossings.filter((c) => c.heat).sort((a, b) => a.next - b.next);
+    const step = Math.min(0.4, CROSS_SPAN_S / Math.max(1, hot.length));
+    const delay = new Map(hot.map((c, i) => [c, CROSS_START_S + i * step]));
+    return { type: 'FeatureCollection', features: crossings.map((c) => ({ type: 'Feature', properties: { id: c.id, ...(c.heat ? { color: c.heat.color, delay: delay.get(c) } : {}), label: c.label ?? '', sub: c.sub ?? '' }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } })) };
   }
   function heatFC() {
     const features = [];
@@ -487,23 +493,33 @@
     locateBtn.classList.toggle('error', state === 'error');
     locateBtn.title = locateBtn.ariaLabel = why || 'Show my location';
   }
+  let locateId = 0;
   function locate(fly) {
     if (!navigator.geolocation) return setLocState('error', 'This browser can’t share your location');
+    const id = ++locateId; // a newer tap supersedes this request
     setLocState('busy');
+    let done = false;
+    // the browser may never answer (e.g. a permission prompt left open); never spin forever
+    const watchdog = setTimeout(() => { if (id === locateId && !done) { done = true; setLocState('error', 'Couldn’t find your location. Tap to try again'); } }, 15000);
     const onPos = (pos, refine) => {
-      if (!map.getSource('me')) return map.once('style.load', () => onPos(pos, refine)); // map style still loading
+      if (id !== locateId) return;
+      done = true; clearTimeout(watchdog);
       setLocState('ok');
       const { longitude: lon, latitude: lat } = pos.coords;
       me = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} };
-      map.getSource('me')?.setData({ type: 'FeatureCollection', features: [me] });
+      map.getSource('me')?.setData({ type: 'FeatureCollection', features: [me] }); // if the style is still loading, addAppLayers draws `me`
       if (fly && !refine) fitMeAndNearest();
     };
-    const fail = (err) => setLocState('error', err.code === 1 ? 'Location is blocked for this site' : 'Couldn’t find your location. Tap to try again');
+    const fail = (err) => {
+      if (id !== locateId || done) return;
+      done = true; clearTimeout(watchdog);
+      setLocState('error', err.code === 1 ? 'Location is blocked for this site' : 'Couldn’t find your location. Tap to try again');
+    };
     // Fast, low-accuracy fix first (works on Macs without GPS); a high-accuracy fix refines it on phones.
     navigator.geolocation.getCurrentPosition((pos) => {
       onPos(pos);
       navigator.geolocation.getCurrentPosition((p2) => onPos(p2, true), () => {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
-    }, fail, { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 });
+    }, fail, { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 });
   }
   // Frame you and the nearest train ("is a train coming?"): flat, and no closer than a town-wide
   // view. With no train running, frame you, your nearest station and nearest crossing instead.
@@ -658,18 +674,22 @@
       if (dark.matches) map.getSource('headlights')?.setData({ type: 'FeatureCollection', features: headlights });
     }
     // pulses: trains (fade away at street zoom, where the 3D train is big enough) and hot crossings
-    // slow, short, soft: ease out as the ring grows, fade out fully well before it restarts
-    const tp = (Date.now() % 3200) / 3200, ease = 1 - (1 - tp) ** 3, tf = (1 - tp) ** 2;
+    // one soft wave per cycle (see crossingDotsFC): rings ease out as they grow and fade to nothing
+    const T = (Date.now() / 1000) % PULSE_CYCLE_S;
+    const tp = Math.min(1, T / TRAIN_RING_S), tf = T < TRAIN_RING_S ? (1 - tp) ** 2 : 0;
     if (map.getLayer('train-pulse')) {
-      map.setPaintProperty('train-pulse', 'circle-radius', 10 + 14 * ease);
+      map.setPaintProperty('train-pulse', 'circle-radius', 10 + 14 * (1 - (1 - tp) ** 3));
       map.setPaintProperty('train-pulse', 'circle-opacity', ['interpolate', ['linear'], ['zoom'], 15, 0.15 * tf, 16.5, 0]);
       map.setPaintProperty('train-pulse', 'circle-stroke-opacity', ['interpolate', ['linear'], ['zoom'], 15, 0.5 * tf, 16.5, 0]);
     }
-    const cp = (Date.now() % 2800) / 2800, cease = 1 - (1 - cp) ** 3, cf = (1 - cp) ** 2;
     if (map.getLayer('crossing-pulse')) {
-      map.setPaintProperty('crossing-pulse', 'circle-radius', 5 + 9 * cease);
-      map.setPaintProperty('crossing-pulse', 'circle-opacity', 0.15 * cf);
-      map.setPaintProperty('crossing-pulse', 'circle-stroke-opacity', 0.5 * cf);
+      // r: this crossing's ring progress, from its delay in the wave (outside 0..1 = not showing)
+      const ring = (out) => ['let', 'r', ['/', ['-', T, ['coalesce', ['get', 'delay'], 0]], CROSS_RING_S], out];
+      const p = ['max', 0, ['min', 1, ['var', 'r']]];
+      const fade = (a) => ring(['case', ['any', ['<', ['var', 'r'], 0], ['>=', ['var', 'r'], 1]], 0, ['*', a, ['^', ['-', 1, p], 2]]]);
+      map.setPaintProperty('crossing-pulse', 'circle-radius', ring(['+', 5, ['*', 9, ['-', 1, ['^', ['-', 1, p], 3]]]]));
+      map.setPaintProperty('crossing-pulse', 'circle-opacity', fade(0.15));
+      map.setPaintProperty('crossing-pulse', 'circle-stroke-opacity', fade(0.5));
     }
     const pulse = 10 + 8 * ((Date.now() % 2000) / 2000);
     if (map.getLayer('me-pulse')) { map.setPaintProperty('me-pulse', 'circle-radius', pulse); map.setPaintProperty('me-pulse', 'circle-opacity', 0.3 * (1 - (pulse - 10) / 8)); }

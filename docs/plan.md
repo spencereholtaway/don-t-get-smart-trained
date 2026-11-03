@@ -2,6 +2,16 @@
 
 Read `docs/decisions.md` first. It explains why the web version is throwaway and the real app will be native iOS.
 
+## Current direction (supersedes the rest of this file where they differ)
+
+- **Use case:** before driving, check whether a SMART train is about to block the road crossings near you, so you don't get stuck at a lowered gate.
+- **The screen shows only:** a map with live trains, your location, and the crossings near you that a train will block soon (and when). No station panel, no replay or speed controls, nothing else unless the user asks.
+- **Ask before adding features.** Show the user work early, even unfinished.
+- **Hosting:** GitHub Pages from `main` (https://spencereholtaway.github.io/don-t-get-smart-trained/). The app is `web/app/`.
+- **Live data:** a Cloudflare Worker holds `API_511_KEY`, polls 511 within the Rule zero budget, caches, and serves JSON to the page. Deploy it with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` from the environment.
+- **Crossing locations:** OpenStreetMap level crossings on the SMART line, fetched once from `overpass-api.de` and saved into the app data.
+- **Next steps, in order:** (1) deploy the Worker and make the map live, (2) add crossings near you, (3) show the user and stop.
+
 **Goal:** a phone-sized web page with a map that shows the user's current location plus all the SMART train data 511.org provides.
 
 ---

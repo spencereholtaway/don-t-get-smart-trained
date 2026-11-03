@@ -677,7 +677,7 @@
       const ring = (out) => ['let', 'r', ['/', ['-', T, ['coalesce', ['get', 'delay'], 0]], CROSS_RING_S], out];
       const p = ['max', 0, ['min', 1, ['var', 'r']]];
       const fade = (a) => ring(['case', ['any', ['<', ['var', 'r'], 0], ['>=', ['var', 'r'], 1]], 0, ['*', a, ['^', ['-', 1, p], 2]]]);
-      map.setPaintProperty('crossing-pulse', 'circle-radius', ring(['+', 5, ['*', 80, ['-', 1, ['^', ['-', 1, p], 3]]]]));
+      map.setPaintProperty('crossing-pulse', 'circle-radius', ring(['+', 5, ['*', 40, ['-', 1, ['^', ['-', 1, p], 3]]]]));
       map.setPaintProperty('crossing-pulse', 'circle-opacity', fade(0.25));
       map.setPaintProperty('crossing-pulse', 'circle-stroke-opacity', fade(0.8));
     }

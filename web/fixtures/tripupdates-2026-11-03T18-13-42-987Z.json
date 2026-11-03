@@ -1,0 +1,527 @@
+{
+  "header": {
+    "gtfsRealtimeVersion": "1.0",
+    "incrementality": "FULL_DATASET",
+    "timestamp": 1793729622
+  },
+  "entity": [
+    {
+      "id": "t_6153496_b_86615_tn_0",
+      "tripUpdate": {
+        "trip": {
+          "tripId": "t_6153496_b_86615_tn_0",
+          "startTime": "09:06:15",
+          "startDate": "20261103",
+          "scheduleRelationship": "SCHEDULED",
+          "routeId": "SMART",
+          "directionId": 0
+        },
+        "stopTimeUpdate": [
+          {
+            "stopSequence": 12,
+            "arrival": {
+              "time": 1793729781
+            },
+            "departure": {
+              "time": 1793729850
+            },
+            "stopId": "71032",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 13,
+            "arrival": {
+              "time": 1793730142
+            },
+            "departure": {
+              "time": 1793730210
+            },
+            "stopId": "71022",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 14,
+            "arrival": {
+              "time": 1793730516
+            },
+            "stopId": "71012",
+            "scheduleRelationship": "SCHEDULED"
+          }
+        ],
+        "vehicle": {
+          "id": "SMRT115",
+          "label": "",
+          "licensePlate": ""
+        },
+        "timestamp": 1793729621
+      }
+    },
+    {
+      "id": "t_6153497_b_86615_tn_0",
+      "tripUpdate": {
+        "trip": {
+          "tripId": "t_6153497_b_86615_tn_0",
+          "startTime": "10:10:15",
+          "startDate": "20261103",
+          "scheduleRelationship": "SCHEDULED",
+          "routeId": "SMART",
+          "directionId": 0
+        },
+        "stopTimeUpdate": [
+          {
+            "stopSequence": 2,
+            "arrival": {
+              "time": 1793729581
+            },
+            "departure": {
+              "time": 1793729611
+            },
+            "stopId": "71132",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 3,
+            "arrival": {
+              "time": 1793729942
+            },
+            "departure": {
+              "time": 1793730090
+            },
+            "stopId": "71122",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 4,
+            "arrival": {
+              "time": 1793730278
+            },
+            "departure": {
+              "time": 1793730330
+            },
+            "stopId": "71112",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 5,
+            "arrival": {
+              "time": 1793730810
+            },
+            "departure": {
+              "time": 1793730810
+            },
+            "stopId": "71102",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 6,
+            "arrival": {
+              "time": 1793730998
+            },
+            "departure": {
+              "time": 1793730998
+            },
+            "stopId": "71092",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 7,
+            "arrival": {
+              "time": 1793731632
+            },
+            "departure": {
+              "time": 1793731632
+            },
+            "stopId": "71082",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 8,
+            "arrival": {
+              "time": 1793731871
+            },
+            "departure": {
+              "time": 1793731890
+            },
+            "stopId": "71072",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 9,
+            "arrival": {
+              "time": 1793732588
+            },
+            "departure": {
+              "time": 1793732670
+            },
+            "stopId": "71062",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 10,
+            "arrival": {
+              "time": 1793732835
+            },
+            "departure": {
+              "time": 1793732850
+            },
+            "stopId": "71052",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 11,
+            "arrival": {
+              "time": 1793733287
+            },
+            "departure": {
+              "time": 1793733330
+            },
+            "stopId": "71042",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 12,
+            "arrival": {
+              "time": 1793733665
+            },
+            "departure": {
+              "time": 1793733690
+            },
+            "stopId": "71032",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 13,
+            "arrival": {
+              "time": 1793733983
+            },
+            "departure": {
+              "time": 1793734050
+            },
+            "stopId": "71022",
+            "scheduleRelationship": "SCHEDULED"
+          }
+        ],
+        "vehicle": {
+          "id": "SMRT117",
+          "label": "",
+          "licensePlate": ""
+        },
+        "timestamp": 1793729621
+      }
+    },
+    {
+      "id": "t_6153498_b_86615_tn_0",
+      "tripUpdate": {
+        "trip": {
+          "tripId": "t_6153498_b_86615_tn_0",
+          "startTime": "11:14:15",
+          "startDate": "20261103",
+          "scheduleRelationship": "SCHEDULED",
+          "routeId": "SMART",
+          "directionId": 0
+        },
+        "stopTimeUpdate": [
+          {
+            "stopSequence": 1,
+            "departure": {
+              "time": 1793733255
+            },
+            "stopId": "71142",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 2,
+            "arrival": {
+              "time": 1793733469
+            },
+            "departure": {
+              "time": 1793733510
+            },
+            "stopId": "71132",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 3,
+            "arrival": {
+              "time": 1793733849
+            },
+            "departure": {
+              "time": 1793733930
+            },
+            "stopId": "71122",
+            "scheduleRelationship": "SCHEDULED"
+          }
+        ],
+        "vehicle": {
+          "id": "SMRT105",
+          "label": "",
+          "licensePlate": ""
+        },
+        "timestamp": 1793729621
+      }
+    },
+    {
+      "id": "t_6153523_b_86615_tn_0",
+      "tripUpdate": {
+        "trip": {
+          "tripId": "t_6153523_b_86615_tn_0",
+          "startTime": "09:12:15",
+          "startDate": "20261103",
+          "scheduleRelationship": "SCHEDULED",
+          "routeId": "SMART",
+          "directionId": 1
+        },
+        "stopTimeUpdate": [
+          {
+            "stopSequence": 11,
+            "arrival": {
+              "time": 1793729872
+            },
+            "departure": {
+              "time": 1793729910
+            },
+            "stopId": "71111",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 12,
+            "arrival": {
+              "time": 1793730105
+            },
+            "departure": {
+              "time": 1793730150
+            },
+            "stopId": "71121",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 13,
+            "arrival": {
+              "time": 1793730674
+            },
+            "departure": {
+              "time": 1793730674
+            },
+            "stopId": "71131",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 14,
+            "arrival": {
+              "time": 1793730913
+            },
+            "stopId": "71141",
+            "scheduleRelationship": "SCHEDULED"
+          }
+        ],
+        "vehicle": {
+          "id": "SMRT107",
+          "label": "",
+          "licensePlate": ""
+        },
+        "timestamp": 1793729621
+      }
+    },
+    {
+      "id": "t_6153524_b_86615_tn_0",
+      "tripUpdate": {
+        "trip": {
+          "tripId": "t_6153524_b_86615_tn_0",
+          "startTime": "09:44:15",
+          "startDate": "20261103",
+          "scheduleRelationship": "SCHEDULED",
+          "routeId": "SMART",
+          "directionId": 1
+        },
+        "stopTimeUpdate": [
+          {
+            "stopSequence": 6,
+            "arrival": {
+              "time": 1793729601
+            },
+            "departure": {
+              "time": 1793729606
+            },
+            "stopId": "71061",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 7,
+            "arrival": {
+              "time": 1793730288
+            },
+            "departure": {
+              "time": 1793730288
+            },
+            "stopId": "71071",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 8,
+            "arrival": {
+              "time": 1793730544
+            },
+            "departure": {
+              "time": 1793730570
+            },
+            "stopId": "71081",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 9,
+            "arrival": {
+              "time": 1793731023
+            },
+            "departure": {
+              "time": 1793731110
+            },
+            "stopId": "71091",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 10,
+            "arrival": {
+              "time": 1793731290
+            },
+            "departure": {
+              "time": 1793731350
+            },
+            "stopId": "71101",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 11,
+            "arrival": {
+              "time": 1793731815
+            },
+            "departure": {
+              "time": 1793731830
+            },
+            "stopId": "71111",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 12,
+            "arrival": {
+              "time": 1793732035
+            },
+            "departure": {
+              "time": 1793732070
+            },
+            "stopId": "71121",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 13,
+            "arrival": {
+              "time": 1793732589
+            },
+            "departure": {
+              "time": 1793732589
+            },
+            "stopId": "71131",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 14,
+            "arrival": {
+              "time": 1793732832
+            },
+            "stopId": "71141",
+            "scheduleRelationship": "SCHEDULED"
+          }
+        ],
+        "vehicle": {
+          "id": "SMRT105",
+          "label": "",
+          "licensePlate": ""
+        },
+        "timestamp": 1793729621
+      }
+    },
+    {
+      "id": "t_6153525_b_86615_tn_0",
+      "tripUpdate": {
+        "trip": {
+          "tripId": "t_6153525_b_86615_tn_0",
+          "startTime": "10:48:15",
+          "startDate": "20261103",
+          "scheduleRelationship": "SCHEDULED",
+          "routeId": "SMART",
+          "directionId": 1
+        },
+        "stopTimeUpdate": [
+          {
+            "stopSequence": 1,
+            "departure": {
+              "time": 1793731695
+            },
+            "stopId": "71011",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 2,
+            "arrival": {
+              "time": 1793732036
+            },
+            "departure": {
+              "time": 1793732130
+            },
+            "stopId": "71021",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 3,
+            "arrival": {
+              "time": 1793732407
+            },
+            "departure": {
+              "time": 1793732430
+            },
+            "stopId": "71031",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 4,
+            "arrival": {
+              "time": 1793732789
+            },
+            "departure": {
+              "time": 1793732790
+            },
+            "stopId": "71041",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 5,
+            "arrival": {
+              "time": 1793733198
+            },
+            "departure": {
+              "time": 1793733198
+            },
+            "stopId": "71051",
+            "scheduleRelationship": "SCHEDULED"
+          },
+          {
+            "stopSequence": 6,
+            "arrival": {
+              "time": 1793733303
+            },
+            "departure": {
+              "time": 1793733330
+            },
+            "stopId": "71061",
+            "scheduleRelationship": "SCHEDULED"
+          }
+        ],
+        "vehicle": {
+          "id": "SMRT115",
+          "label": "",
+          "licensePlate": ""
+        },
+        "timestamp": 1793729621
+      }
+    }
+  ]
+}

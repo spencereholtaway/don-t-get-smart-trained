@@ -637,8 +637,10 @@
           for (const side of [-1, 1]) box(xb - sg * 0.35, xb + sg * 0.06, side * pinch * 0.45 - 0.22, side * pinch * 0.45 + 0.22, 1.3, 1.65, lamp);
           if (sg > 0) {
             headlights.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: P(half + 6, 0) } });
-            const bearing = (Math.atan2(ux, uy) * 180 / Math.PI + 360) % 360;
-            marks.push({ type: 'Feature', properties: { kind: 'arrow', bearing }, geometry: { type: 'Point', coordinates: P(half + 14, 0) } });
+            // direction arrow: on the track just ahead of the train, pointing along the track there
+            // (distance along the shape grows in the direction of travel)
+            const ad = x.dist + 14 * k, a0 = pointAt(x.trip.shape, ad - 15), a1 = pointAt(x.trip.shape, ad + 15), at = pointAt(x.trip.shape, ad);
+            marks.push({ type: 'Feature', properties: { kind: 'arrow', bearing: a0.lon === a1.lon && a0.lat === a1.lat ? at.bearing : bearing([a0.lon, a0.lat], [a1.lon, a1.lat]) }, geometry: { type: 'Point', coordinates: [at.lon, at.lat] } });
           }
         }
         // windows and doors on both sides, as thin panels on the outside of the body

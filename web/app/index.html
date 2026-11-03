@@ -347,17 +347,20 @@
   // Level crossings (roads crossing the track at grade), saved in data.json by
   // scripts/build-crossings.mjs. Note how far along each direction's track they are.
   //
-  // Gate model, per train, per crossing (times relative to when the train reaches the crossing):
-  //   gates down 30 s before it arrives (FRA minimum warning is 20 s), up 30 s after the front
-  //   passes (train length + gates lifting);
-  //   station rule: a crossing within 250 m past a platform, in the direction of travel, goes
-  //   down when the train pulls into the station and stays down through the dwell (SMART's 2022
-  //   San Rafael study: ~52 s per train, ~3 min when trains pass, driven by station dwell);
+  // Gate model, per train, per crossing, from SMART's 2022 San Rafael gate-down study
+  // (580+ activations at 2nd St): one train holds the gates 52 s on average, 35 s at least;
+  // two trains passing hold them ~3 min (here the two trains' windows simply merge).
+  //   gates down 30 s before the train reaches the crossing (FRA minimum warning is 20 s) and up
+  //   22 s after, 52 s in all;
+  //   station rule: for a crossing within 250 m past a platform, in the direction of travel, a
+  //   dwell longer than the normal 50-60 s (a train that arrived early, waiting to leave on time)
+  //   keeps the gates down that much longer. The study saw this with southbound trains at 3rd and
+  //   2nd St; the same rule covers northbound trains at 4th and 5th St.
   //   uncertainty: the window widens as live data ages, and more for timetable-only estimates.
   // Street heat: red from 90 s before arrival (60 s before gates drop) until gates are up, then
   // fades over FADE_S (traffic still backed up); yellow when a train is within 5 minutes.
   // Strongest at the crossing, fading to nothing ARM_M along the street.
-  const GATE_LEAD_S = 30, GATE_LIFT_S = 30, STATION_M = 250, STATION_LEAD_S = 20, RED_LEAD_S = 60, YELLOW_S = 5 * 60;
+  const GATE_LEAD_S = 30, GATE_LIFT_S = 22, STATION_M = 250, NORMAL_DWELL_S = 60, RED_LEAD_S = 60, YELLOW_S = 5 * 60;
   const MARGIN_PER_MIN_S = 4, MARGIN_MAX_S = 60, MARGIN_SCHEDULE_S = 45;
   const FADE_S = 3 * 60, ARM_M = 250, PIECE_M = 20;
   const HEAT_YELLOW = '#f2b600', HEAT_RED = '#e0352b';
@@ -411,8 +414,8 @@
         const at = timeAtDist(stops, dc);
         if (at == null) continue;
         let down = at - GATE_LEAD_S;
-        // station rule: platform just before this crossing (not the trip's first stop)
-        for (let i = 1; i < stops.length - 1; i++) if (stops[i][3] < dc && dc <= stops[i][3] + STATION_M) down = Math.min(down, stops[i][1] - STATION_LEAD_S);
+        // station rule: platform just before this crossing (not the trip's first stop); dwell beyond normal adds on
+        for (let i = 1; i < stops.length - 1; i++) if (stops[i][3] < dc && dc <= stops[i][3] + STATION_M) down -= Math.max(0, stops[i][2] - stops[i][1] - NORMAL_DWELL_S);
         const margin = live ? Math.min(MARGIN_MAX_S, MARGIN_PER_MIN_S * ageMin) : MARGIN_SCHEDULE_S;
         const gd = down - margin - secs, gu = at + GATE_LIFT_S + margin - secs; // gates down / up, from now
         const rs = gd - RED_LEAD_S;                                            // red starts, from now

@@ -15,5 +15,5 @@
 - The key goes in the query string: `?api_key=...`.
   - In cloud sessions it is the environment variable `API_511_KEY`, set as a plain env var, not a "network secret".
   - Locally it goes in `web/.env`, which is gitignored. Never commit the key.
-- The free key allows about 60 requests per hour. Cache the static data and poll the realtime feeds no more than about once a minute.
+- **The key is shared with MyBusSF, a live paid app.** Rate limits are counted per key, so follow the strict usage rules in `docs/plan.md` (preferably, get a separate dev key).
 - The browser probably can't call 511 directly, because CORS likely blocks it. Expect a tiny local proxy server that holds the key.

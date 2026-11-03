@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SMART Trains</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+  /* Full-bleed map in a phone-width column; controls float on top as quiet glass panels. */
+  :root {
+    --bg: #e9ece8; --panel: rgba(255,255,255,.88); --fg: #1c241e; --muted: #5d6b61;
+    --line: rgba(28,36,30,.12); --accent: #4d6d51; --accent-soft: rgba(77,109,81,.14);
+    --late: #b5581f; --early: #2f6f8f; --train: #1c241e;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1411; --panel: rgba(24,30,26,.86); --fg: #e8eee9; --muted: #9aa89e;
+      --line: rgba(232,238,233,.12); --accent: #8fbf8f; --accent-soft: rgba(143,191,143,.16);
+      --late: #f0a065; --early: #7cc3e3; --train: #f4f7f4; color-scheme: dark; }
+  }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.35 var(--font); }
+  #app { position: relative; height: 100%; max-width: 480px; margin: 0 auto; overflow: hidden; }
+  #map { position: absolute; inset: 0; }
+  .panel { background: var(--panel); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.12); }
+  #top { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 10px); left: 12px; right: 12px; display: grid; gap: 8px; z-index: 2; }
+  #status { padding: 9px 12px; display: flex; gap: 10px; align-items: center; font-size: 13px; }
+  #status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  #status .dot.live { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  #status .text { min-width: 0; flex: 1; }
+  #status b { font-weight: 600; }
+  #status .sub { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #alerts { padding: 10px 12px; font-size: 13px; border-color: var(--late); }
+  #bottom { position: absolute; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); display: grid; gap: 8px; z-index: 2; }
+  #controls { padding: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .seg { display: inline-flex; background: var(--accent-soft); border-radius: 10px; padding: 2px; }
+  .seg button, .btn { font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--fg); padding: 7px 10px; border-radius: 8px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 3px rgba(0,0,0,.15); font-weight: 600; }
+  .btn { background: var(--accent); color: #fff; font-weight: 600; margin-left: auto; }
+  @media (prefers-color-scheme: dark) { .btn { color: #0f1411; } }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #clock { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); padding: 0 4px; }
+  #sheet { padding: 14px 14px 10px; max-height: 46vh; overflow: auto; }
+  #sheet h2 { margin: 0; font-size: 19px; text-wrap: balance; }
+  #sheet .meta { color: var(--muted); font-size: 13px; margin: 2px 0 10px; }
+  #sheet h3 { margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+  .row { display: grid; grid-template-columns: 74px 1fr auto; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; align-items: baseline; }
+  .row .t { font-weight: 600; }
+  .row .trip { color: var(--muted); font-size: 13px; }
+  .tag { font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .tag.late { color: var(--late); } .tag.early { color: var(--early); } .tag.on { color: var(--accent); } .tag.sched { color: var(--muted); font-weight: 500; }
+  .close { float: right; font: inherit; font-size: 20px; line-height: 1; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 4px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
+  .note { color: var(--muted); font-size: 12px; padding: 4px 2px 0; }
+  .maplibregl-ctrl-attrib { font-size: 10px; }
+  .maplibregl-ctrl-bottom-right { bottom: 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map" role="region" aria-label="Map of SMART stations and trains"></div>
+
+  <div id="top">
+    <div id="status" class="panel" aria-live="polite">
+      <span class="dot" id="statusDot"></span>
+      <span class="text"><b id="statusMain">Loading…</b><br><span class="sub" id="statusSub"></span></span>
+    </div>
+    <div id="alerts" class="panel" hidden></div>
+  </div>
+
+  <div id="bottom">
+    <div id="sheet" class="panel" hidden></div>
+    <div id="controls" class="panel">
+      <div class="seg" role="group" aria-label="Clock">
+        <button id="modeNow" aria-pressed="true">Now</button>
+        <button id="modeReplay" aria-pressed="false">Replay</button>
+      </div>
+      <div class="seg" role="group" aria-label="Speed" id="speedSeg">
+        <button data-speed="1" aria-pressed="true">1×</button>
+        <button data-speed="10" aria-pressed="false">10×</button>
+        <button data-speed="60" aria-pressed="false">60×</button>
+      </div>
+      <span id="clock"></span>
+      <button class="btn" id="locate">Find me</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+(async function () {
+  const TZ = 'America/Los_Angeles';
+  const FRESH_S = 8 * 60;    // live predictions used fully up to this age
+  const STALE_S = 10 * 60;   // after this, plain timetable
+  const data = await (await fetch('data.json', { cache: 'no-cache' })).json();
+  const rt = data.realtime;
+  const snapshotAt = rt.tripUpdatesAt || rt.vehiclesAt;
+  const stationsById = Object.fromEntries(data.stations.map((s) => [s.id, s]));
+
+  // ---------- time ----------
+  const fmtParts = new Intl.DateTimeFormat('en-US', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', weekday: 'short', hourCycle: 'h23' });
+  const DOW = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  function la(unixS) {
+    const p = Object.fromEntries(fmtParts.formatToParts(new Date(unixS * 1000)).map((x) => [x.type, x.value]));
+    const secs = +p.hour * 3600 + +p.minute * 60 + +p.second;
+    return { ymd: p.year + p.month + p.day, dow: DOW[p.weekday], secs, midnight: unixS - secs };
+  }
+  const timeFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
+  const timeFmtS = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  const dayFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' });
+  const hm = (u) => timeFmt.format(new Date(u * 1000));
+  function ago(s) {
+    if (s < 60) return `${Math.max(0, Math.round(s))}s ago`;
+    if (s < 3600) return `${Math.round(s / 60)} min ago`;
+    if (s < 86400 * 2) return `${Math.round(s / 3600)} h ago`;
+    return `${Math.round(s / 86400)} days ago`;
+  }
+
+  const clock = { mode: 'now', speed: 1, simStart: Date.now() / 1000, wallStart: Date.now() / 1000 };
+  function nowS() { return clock.simStart + (Date.now() / 1000 - clock.wallStart) * clock.speed; }
+  function setClock(mode, speed) {
+    const changed = mode !== clock.mode;
+    clock.simStart = changed ? (mode === 'replay' ? snapshotAt : Date.now() / 1000) : nowS();
+    clock.wallStart = Date.now() / 1000;
+    clock.mode = mode; clock.speed = speed;
+    if (changed) resetMotion();
+  }
+
+  // ---------- service calendar ----------
+  const activeCache = {};
+  function activeServices(ymd, dow) {
+    if (activeCache[ymd]) return activeCache[ymd];
+    const set = new Set(data.calendar.filter((c) => c.start <= ymd && ymd <= c.end && c.days[dow]).map((c) => c.service));
+    for (const e of data.exceptions) if (e.date === ymd) e.add ? set.add(e.service) : set.delete(e.service);
+    return (activeCache[ymd] = set);
+  }
+
+  // ---------- track geometry ----------
+  const shapes = {};
+  for (const [id, pts] of Object.entries(data.shapes)) shapes[id] = { pts, dist: pts.map((p) => p[2]) };
+  function pointAt(shapeId, d) {
+    const { pts, dist } = shapes[shapeId];
+    let lo = 0, hi = dist.length - 1;
+    if (d <= dist[0]) return { lon: pts[0][0], lat: pts[0][1], bearing: bearing(pts[0], pts[1]) };
+    if (d >= dist[hi]) return { lon: pts[hi][0], lat: pts[hi][1], bearing: bearing(pts[hi - 1], pts[hi]) };
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (dist[m] <= d) lo = m; else hi = m; }
+    const f = (d - dist[lo]) / (dist[hi] - dist[lo] || 1);
+    return { lon: pts[lo][0] + (pts[hi][0] - pts[lo][0]) * f, lat: pts[lo][1] + (pts[hi][1] - pts[lo][1]) * f, bearing: bearing(pts[lo], pts[hi]) };
+  }
+  function bearing(a, b) {
+    const toR = Math.PI / 180, y = Math.sin((b[0] - a[0]) * toR) * Math.cos(b[1] * toR);
+    const x = Math.cos(a[1] * toR) * Math.sin(b[1] * toR) - Math.sin(a[1] * toR) * Math.cos(b[1] * toR) * Math.cos((b[0] - a[0]) * toR);
+    return (Math.atan2(y, x) / toR + 360) % 360;
+  }
+
+  // ---------- realtime: predicted timeline per trip ----------
+  // Each trip update lists predicted times for the stops still ahead. We turn those into
+  // a full adjusted timeline: predicted where we have it, scheduled + nearest known delay elsewhere.
+  const predicted = {};
+  for (const u of rt.tripUpdates) {
+    const trip = data.trips.find((t) => t.id === u.trip);
+    if (!trip) continue;
+    const y = u.startDate, base = la(Date.UTC(+y.slice(0, 4), +y.slice(4, 6) - 1, +y.slice(6, 8), 20) / 1000).midnight;
+    const bySeq = {};
+    for (const [seq, arr, dep] of u.stops) bySeq[seq] = [arr != null ? arr - base : null, dep != null ? dep - base : null];
+    const seqs = Object.keys(bySeq).map(Number).sort((a, b) => a - b);
+    const firstDelay = (() => { const [a, d] = bySeq[seqs[0]]; const s = trip.stops[seqs[0] - 1]; return a != null ? a - s[1] : d - s[2]; })();
+    let delay = firstDelay;
+    const stops = trip.stops.map((s, i) => {
+      const p = bySeq[i + 1];
+      if (p) {
+        const arr = p[0] ?? (p[1] - (s[2] - s[1]));
+        const dep = p[1] ?? Math.max(arr, s[2] + (arr - s[1]));
+        delay = dep - s[2];
+        return [s[0], arr, dep, s[3]];
+      }
+      return [s[0], s[1] + delay, s[2] + delay, s[3]];
+    });
+    for (let i = 1; i < stops.length; i++) { // keep it monotonic
+      stops[i][1] = Math.max(stops[i][1], stops[i - 1][2] + 30);
+      stops[i][2] = Math.max(stops[i][2], stops[i][1]);
+    }
+    predicted[trip.id] = { stops, vehicle: u.vehicle, delayNow: firstDelay };
+  }
+
+  // ---------- motion ----------
+  const RAMP = 0.2; // share of each run spent accelerating, and the same braking
+  function profile(p) {
+    const v = 1 / (1 - RAMP);
+    if (p < RAMP) return 0.5 * v * p * p / RAMP;
+    if (p < 1 - RAMP) return 0.5 * v * RAMP + v * (p - RAMP);
+    return 1 - 0.5 * v * (1 - p) * (1 - p) / RAMP;
+  }
+  function profileInverse(f) { let lo = 0, hi = 1; for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (profile(m) < f) lo = m; else hi = m; } return (lo + hi) / 2; }
+
+  // GPS correction: project each train's GPS fix onto its track, then re-time the run it is on
+  // so the model passes that point at the GPS time, keeping the predicted arrival at the next stop.
+  function projectOnShape(shapeId, lon, lat) {
+    const { pts } = shapes[shapeId], k = Math.cos(lat * Math.PI / 180);
+    let best = { e: Infinity, d: 0 };
+    for (let i = 0; i < pts.length - 1; i++) {
+      const ax = pts[i][0] * k, ay = pts[i][1], bx = pts[i + 1][0] * k, by = pts[i + 1][1], px = lon * k, py = lat;
+      const L = (bx - ax) ** 2 + (by - ay) ** 2, u = L ? Math.max(0, Math.min(1, ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / L)) : 0;
+      const e = Math.hypot(ax + (bx - ax) * u - px, ay + (by - ay) * u - py);
+      if (e < best.e) best = { e, d: pts[i][2] + (pts[i + 1][2] - pts[i][2]) * u };
+    }
+    return { d: best.d, meters: best.e * 111320 };
+  }
+  for (const v of rt.vehicles) {
+    const p = predicted[v.trip], trip = data.trips.find((t) => t.id === v.trip);
+    if (!p || !trip) continue;
+    const { d, meters } = projectOnShape(trip.shape, v.lon, v.lat);
+    if (meters > 300) continue; // too far from the track to trust
+    const T = v.at - la(v.at).midnight, s = p.stops;
+    if (v.status === 'STOPPED_AT' && v.stopSeq) { const st = s[v.stopSeq - 1]; if (st) { st[1] = Math.min(st[1], T); st[2] = Math.max(st[2], T + 20); } continue; }
+    const i = s.findIndex((x, j) => j < s.length - 1 && x[3] <= d && d < s[j + 1][3]);
+    if (i < 0) continue;
+    const a = s[i], b = s[i + 1];
+    if (d - a[3] < 50) { a[2] = Math.max(a[2], T + 20); continue; } // still at the station
+    if (T >= b[1]) continue;
+    const q = profileInverse((d - a[3]) / (b[3] - a[3]));
+    a[2] = Math.min((T - q * b[1]) / (1 - q), T); // departure time that puts the train at d at time T
+    a[1] = Math.min(a[1], a[2]);
+    for (let j = i; j > 0; j--) { if (s[j - 1][2] > s[j][1] - 30) { s[j - 1][2] = s[j][1] - 30; s[j - 1][1] = Math.min(s[j - 1][1], s[j - 1][2]); } }
+  }
+  function distAt(stops, t) {
+    const first = stops[0], last = stops[stops.length - 1];
+    if (t < first[2] - 90 || t > last[1] + 45) return null; // not on the line
+    if (t <= first[2]) return { d: first[3], at: first[0] };
+    for (let i = 0; i < stops.length - 1; i++) {
+      const a = stops[i], b = stops[i + 1];
+      if (t < a[2]) return { d: a[3], at: a[0] };            // dwelling at a
+      if (t < b[1]) return { d: a[3] + (b[3] - a[3]) * profile((t - a[2]) / (b[1] - a[2])), next: b[0] };
+    }
+    return { d: last[3], at: last[0] };
+  }
+
+  const shown = {}; // tripId -> last displayed distance (trains never move backward)
+  function resetMotion() { for (const k in shown) delete shown[k]; }
+
+  function trainsAt(t) {
+    const d = la(t), services = activeServices(d.ymd, d.dow), secs = t - d.midnight;
+    const age = t - snapshotAt, sameDay = la(snapshotAt).ymd === d.ymd;
+    // weight of live predictions: 1 while fresh, fading to 0 by STALE_S, 0 before the snapshot or on other days
+    const w = !sameDay || age < -60 ? 0 : age <= FRESH_S ? 1 : age >= STALE_S ? 0 : 1 - (age - FRESH_S) / (STALE_S - FRESH_S);
+    const out = [];
+    for (const trip of data.trips) {
+      if (!services.has(trip.service)) continue;
+      const sched = distAt(trip.stops, secs);
+      const live = predicted[trip.id] && w > 0 ? distAt(predicted[trip.id].stops, secs) : null;
+      let pos = sched, isLive = false;
+      if (live && sched) { pos = { ...live, d: sched.d + (live.d - sched.d) * w }; isLive = w > 0.5; }
+      else if (live && w > 0.5) { pos = live; isLive = true; }
+      if (!pos) { delete shown[trip.id]; continue; }
+      let dist = pos.d;
+      if (shown[trip.id] != null && dist < shown[trip.id]) dist = shown[trip.id]; // hold, never reverse
+      shown[trip.id] = dist;
+      const p = pointAt(trip.shape, dist);
+      out.push({ trip, ...p, live: isLive, at: pos.at, next: pos.next });
+    }
+    return { trains: out, w, age };
+  }
+
+  // ---------- station arrivals ----------
+  function arrivalsAt(stationId, t) {
+    const d = la(t), secs = t - d.midnight, services = activeServices(d.ymd, d.dow);
+    const age = t - snapshotAt, live = la(snapshotAt).ymd === d.ymd && age > -60 && age < STALE_S;
+    const rows = [];
+    for (const trip of data.trips) {
+      if (!services.has(trip.service)) continue;
+      const i = trip.stops.findIndex((s) => s[0] === stationId);
+      if (i < 0 || i === trip.stops.length - 1) continue; // skip where the trip ends
+      const sched = trip.stops[i][2];
+      const pred = live && predicted[trip.id] ? predicted[trip.id].stops[i][2] : null;
+      const when = pred ?? sched;
+      if (when < secs - 30) continue;
+      rows.push({ trip, sched, pred, when });
+    }
+    rows.sort((a, b) => a.when - b.when);
+    return { live, rows, midnight: d.midnight };
+  }
+
+  // ---------- map ----------
+  const dark = matchMedia('(prefers-color-scheme: dark)');
+  const styleUrl = () => `https://tiles.openfreemap.org/styles/${dark.matches ? 'dark' : 'positron'}`;
+  const north = data.trips.find((t) => t.dir === 1).shape;
+  const routeCoords = data.shapes[north].map((p) => [p[0], p[1]]);
+  const bounds = routeCoords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(routeCoords[0], routeCoords[0]));
+
+  const map = new maplibregl.Map({
+    container: 'map', style: styleUrl(), bounds, fitBoundsOptions: { padding: { top: 90, bottom: 110, left: 30, right: 30 } },
+    pitch: 45, maxPitch: 70, minZoom: 7, attributionControl: { compact: true }, dragRotate: true, touchPitch: true,
+  });
+  map.touchZoomRotate.enableRotation();
+  dark.addEventListener('change', () => map.setStyle(styleUrl()));
+
+  function trainIcon() {
+    const s = 64, c = document.createElement('canvas'); c.width = c.height = s;
+    const g = c.getContext('2d');
+    const css = getComputedStyle(document.documentElement);
+    g.translate(s / 2, s / 2);
+    g.fillStyle = css.getPropertyValue('--train').trim();
+    g.strokeStyle = dark.matches ? '#0f1411' : '#ffffff'; g.lineWidth = 5; g.lineJoin = 'round';
+    g.beginPath(); g.moveTo(0, -24); g.lineTo(16, 18); g.lineTo(0, 9); g.lineTo(-16, 18); g.closePath();
+    g.stroke(); g.fill();
+    return { width: s, height: s, data: g.getImageData(0, 0, s, s).data };
+  }
+
+  function addAppLayers() {
+    const css = getComputedStyle(document.documentElement);
+    const accent = css.getPropertyValue('--accent').trim();
+    if (map.hasImage('train')) map.removeImage('train');
+    map.addImage('train', trainIcon(), { pixelRatio: 2 });
+
+    // gentle 3D buildings when zoomed in
+    map.addLayer({ id: 'buildings-3d', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14,
+      paint: { 'fill-extrusion-color': dark.matches ? '#2a332d' : '#dfe3dd',
+        'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 5], 'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+        'fill-extrusion-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0, 15.5, 0.7] } });
+
+    map.addSource('route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: routeCoords } } });
+    map.addLayer({ id: 'route-glow', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': accent, 'line-opacity': 0.25, 'line-blur': 6, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 8, 14, 18] } });
+    map.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': accent, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 14, 5] } });
+
+    map.addSource('stations', { type: 'geojson', data: { type: 'FeatureCollection', features: data.stations.map((s) => ({ type: 'Feature', id: +s.id, properties: { id: s.id, name: s.name }, geometry: { type: 'Point', coordinates: [s.lon, s.lat] } })) } });
+    map.addLayer({ id: 'stations', type: 'circle', source: 'stations',
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 4, 14, 8], 'circle-color': dark.matches ? '#0f1411' : '#ffffff',
+        'circle-stroke-color': accent, 'circle-stroke-width': ['case', ['boolean', ['feature-state', 'selected'], false], 4, 2.5], 'circle-pitch-alignment': 'map' } });
+    map.addLayer({ id: 'station-labels', type: 'symbol', source: 'stations', minzoom: 9.2,
+      layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 12, 'text-offset': [0.9, 0], 'text-anchor': 'left', 'text-optional': true },
+      paint: { 'text-color': css.getPropertyValue('--fg').trim(), 'text-halo-color': dark.matches ? '#0f1411' : '#ffffff', 'text-halo-width': 1.5 } });
+
+    map.addSource('gps', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'gps', type: 'circle', source: 'gps', paint: { 'circle-radius': 6, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': css.getPropertyValue('--early').trim(), 'circle-stroke-width': 2, 'circle-pitch-alignment': 'map' } });
+
+    map.addSource('trains', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'train-halo', type: 'circle', source: 'trains', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 9, 14, 15], 'circle-color': accent, 'circle-opacity': ['case', ['get', 'live'], 0.35, 0.12], 'circle-pitch-alignment': 'map', 'circle-blur': 0.4 } });
+    map.addLayer({ id: 'trains', type: 'symbol', source: 'trains',
+      layout: { 'icon-image': 'train', 'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.6, 14, 1], 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
+      paint: { 'icon-opacity': ['case', ['get', 'live'], 1, 0.55] } });
+
+    map.addSource('me', { type: 'geojson', data: { type: 'FeatureCollection', features: me ? [me] : [] } });
+    map.addLayer({ id: 'me-pulse', type: 'circle', source: 'me', paint: { 'circle-radius': 10, 'circle-color': '#2f7de1', 'circle-opacity': 0.2, 'circle-pitch-alignment': 'map' } });
+    map.addLayer({ id: 'me', type: 'circle', source: 'me', paint: { 'circle-radius': 6, 'circle-color': '#2f7de1', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2, 'circle-pitch-alignment': 'map' } });
+    if (selected) map.setFeatureState({ source: 'stations', id: +selected }, { selected: true });
+  }
+  let me = null, selected = null;
+  map.on('style.load', addAppLayers);
+
+  // ---------- interactions ----------
+  map.on('click', 'stations', (e) => selectStation(e.features[0].properties.id, true));
+  map.on('click', 'trains', (e) => {
+    const f = e.features[0].properties;
+    showTrain(f.trip);
+  });
+  for (const l of ['stations', 'trains']) {
+    map.on('mouseenter', l, () => (map.getCanvas().style.cursor = 'pointer'));
+    map.on('mouseleave', l, () => (map.getCanvas().style.cursor = ''));
+  }
+
+  const sheet = document.getElementById('sheet');
+  function selectStation(id, fly) {
+    if (selected) map.setFeatureState({ source: 'stations', id: +selected }, { selected: false });
+    selected = id; sheetKind = 'station';
+    map.setFeatureState({ source: 'stations', id: +id }, { selected: true });
+    const s = stationsById[id];
+    if (fly) map.flyTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 13.5), pitch: 50, duration: 1400, essential: true, offset: [0, -80] });
+    renderSheet();
+  }
+  let sheetKind = null, sheetTrip = null;
+  function showTrain(tripId) { sheetKind = 'train'; sheetTrip = tripId; renderSheet(); }
+  function closeSheet() {
+    if (selected) map.setFeatureState({ source: 'stations', id: +selected }, { selected: false });
+    selected = null; sheetKind = null; sheet.hidden = true;
+  }
+
+  function statusTag(delay) {
+    if (delay == null) return '<span class="tag sched">Scheduled</span>';
+    const m = Math.round(delay / 60);
+    if (Math.abs(delay) < 60) return '<span class="tag on">On time</span>';
+    return delay > 0 ? `<span class="tag late">${m} min late</span>` : `<span class="tag early">${-m} min early</span>`;
+  }
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function renderSheet() {
+    if (!sheetKind) return;
+    const t = nowS();
+    if (sheetKind === 'station') {
+      const s = stationsById[selected];
+      const { live, rows, midnight } = arrivalsAt(selected, t);
+      const group = (dir, label) => {
+        const list = rows.filter((r) => r.trip.dir === dir).slice(0, 3);
+        if (!list.length) return `<h3>${label}</h3><div class="empty">No more trains today.</div>`;
+        return `<h3>${label}</h3>` + list.map((r) => `<div class="row"><span class="t">${hm(midnight + r.when)}</span><span class="trip">${esc(r.trip.name)}${r.pred != null && Math.abs(r.pred - r.sched) >= 60 ? ` · sched ${hm(midnight + r.sched)}` : ''}</span>${statusTag(r.pred != null ? r.pred - r.sched : null)}</div>`).join('');
+      };
+      sheet.innerHTML = `<button class="close" aria-label="Close">×</button><h2>${esc(s.name)}</h2>
+        <div class="meta">${live ? 'Predicted times from live data' : 'Timetable times (no recent live data)'}</div>
+        ${group(0, 'Southbound to Larkspur')}${group(1, 'Northbound to Windsor')}`;
+    } else {
+      const trip = data.trips.find((x) => x.id === sheetTrip);
+      const p = predicted[trip.id];
+      const state = lastFrame.trains.find((x) => x.trip.id === trip.id);
+      const where = state?.at ? `At ${stationsById[state.at]?.name}` : state?.next ? `Next stop ${stationsById[state.next]?.name}` : 'Not running now';
+      sheet.innerHTML = `<button class="close" aria-label="Close">×</button><h2>${esc(trip.name)} to ${esc(trip.headsign)}</h2>
+        <div class="meta">${esc(where)}${p?.vehicle ? ` · train ${esc(p.vehicle)}` : ''}</div>
+        <div class="note">${state?.live ? `Position from live predictions (${statusTag(p.delayNow).replace(/<[^>]+>/g, '').toLowerCase()} at last update).` : 'Estimated position from the timetable.'}</div>`;
+    }
+    sheet.hidden = false;
+    sheet.querySelector('.close').onclick = closeSheet;
+  }
+
+  // location
+  const locateBtn = document.getElementById('locate');
+  function nearestStation(lon, lat) {
+    let best = null, bd = Infinity;
+    for (const s of data.stations) { const d = Math.hypot((s.lon - lon) * Math.cos(lat * Math.PI / 180), s.lat - lat); if (d < bd) { bd = d; best = s; } }
+    return { s: best, miles: bd * 69.1 };
+  }
+  function locate(fly) {
+    if (!navigator.geolocation) return showLocMsg('This browser can’t share your location. Tap a station instead.');
+    locateBtn.textContent = 'Finding…';
+    navigator.geolocation.getCurrentPosition((pos) => {
+      locateBtn.textContent = 'Find me';
+      const { longitude: lon, latitude: lat } = pos.coords;
+      me = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} };
+      map.getSource('me')?.setData({ type: 'FeatureCollection', features: [me] });
+      const n = nearestStation(lon, lat);
+      if (fly) {
+        if (n.miles < 30) {
+          map.fitBounds(new maplibregl.LngLatBounds([lon, lat], [lon, lat]).extend([n.s.lon, n.s.lat]), { padding: { top: 120, bottom: 300, left: 60, right: 60 }, maxZoom: 14, pitch: 50, duration: 1600 });
+          selectStation(n.s.id, false);
+        } else showLocMsg(`You’re about ${Math.round(n.miles)} miles from the nearest SMART station (${n.s.name}).`);
+      }
+    }, () => { locateBtn.textContent = 'Find me'; showLocMsg('Location is off. Tap a station to see its next trains.'); }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  }
+  function showLocMsg(msg) { sheetKind = null; sheet.innerHTML = `<button class="close" aria-label="Close">×</button><div class="meta" style="margin:0">${esc(msg)}</div>`; sheet.hidden = false; sheet.querySelector('.close').onclick = closeSheet; }
+  locateBtn.onclick = () => locate(true);
+  map.once('load', () => locate(true));
+
+  // clock controls
+  const modeNow = document.getElementById('modeNow'), modeReplay = document.getElementById('modeReplay');
+  const speedBtns = [...document.querySelectorAll('#speedSeg button')];
+  function syncButtons() {
+    modeNow.setAttribute('aria-pressed', clock.mode === 'now');
+    modeReplay.setAttribute('aria-pressed', clock.mode === 'replay');
+    for (const b of speedBtns) b.setAttribute('aria-pressed', +b.dataset.speed === clock.speed);
+  }
+  modeNow.onclick = () => { setClock('now', 1); syncButtons(); renderSheet(); };
+  modeReplay.onclick = () => { setClock('replay', clock.speed); syncButtons(); renderSheet(); };
+  for (const b of speedBtns) b.onclick = () => { setClock(clock.mode, +b.dataset.speed); syncButtons(); };
+
+  // alerts
+  const alertsEl = document.getElementById('alerts');
+  if (rt.alerts.length) { alertsEl.innerHTML = rt.alerts.map((a) => `<b>${esc(a.header)}</b>${a.description ? `<br>${esc(a.description)}` : ''}`).join('<hr>'); alertsEl.hidden = false; }
+
+  // ---------- frame loop ----------
+  let lastFrame = { trains: [] }, lastSheet = 0, lastStatus = 0;
+  const statusMain = document.getElementById('statusMain'), statusSub = document.getElementById('statusSub'), statusDot = document.getElementById('statusDot'), clockEl = document.getElementById('clock');
+  function frame() {
+    const t = nowS();
+    lastFrame = trainsAt(t);
+    const src = map.getSource('trains');
+    if (src) src.setData({ type: 'FeatureCollection', features: lastFrame.trains.map((x) => ({ type: 'Feature', properties: { trip: x.trip.id, bearing: x.bearing, live: x.live }, geometry: { type: 'Point', coordinates: [x.lon, x.lat] } })) });
+    const gps = map.getSource('gps');
+    if (gps) {
+      const showGps = clock.mode === 'replay' && Math.abs(t - rt.vehiclesAt) < 60;
+      gps.setData({ type: 'FeatureCollection', features: showGps ? rt.vehicles.map((v) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [v.lon, v.lat] } })) : [] });
+    }
+    const pulse = 10 + 8 * ((Date.now() % 2000) / 2000);
+    if (map.getLayer('me-pulse')) { map.setPaintProperty('me-pulse', 'circle-radius', pulse); map.setPaintProperty('me-pulse', 'circle-opacity', 0.3 * (1 - (pulse - 10) / 8)); }
+
+    if (Date.now() - lastStatus > 250) {
+      lastStatus = Date.now();
+      const n = lastFrame.trains.length, liveN = lastFrame.trains.filter((x) => x.live).length;
+      clockEl.textContent = (clock.mode === 'replay' || clock.speed !== 1 ? dayFmt.format(new Date(t * 1000)) + ' ' : '') + timeFmtS.format(new Date(t * 1000));
+      statusDot.classList.toggle('live', liveN > 0);
+      statusMain.textContent = n === 0 ? 'No trains running right now' : `${n} train${n > 1 ? 's' : ''} running${liveN ? ` · ${liveN} with live data` : ' · timetable estimates'}`;
+      const snap = `Live data from ${dayFmt.format(new Date(snapshotAt * 1000))} ${hm(snapshotAt)}`;
+      statusSub.textContent = clock.mode === 'replay' ? `Replaying the ${hm(snapshotAt)} snapshot at ${clock.speed}×` : `${snap} (${ago(Date.now() / 1000 - snapshotAt)}). Auto-refresh isn’t set up yet.`;
+    }
+    if (sheetKind && Date.now() - lastSheet > 1000) { lastSheet = Date.now(); renderSheet(); }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

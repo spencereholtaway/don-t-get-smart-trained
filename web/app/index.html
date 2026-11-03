@@ -262,7 +262,7 @@
 
   const map = new maplibregl.Map({
     container: 'map', style: styleUrl(), bounds, fitBoundsOptions: { padding: { top: 40, bottom: 40, left: 30, right: 30 } },
-    pitch: 45, maxPitch: 70, minZoom: 7, attributionControl: { compact: true }, dragRotate: true, touchPitch: true,
+    pitch: 0, maxPitch: 70, minZoom: 7, attributionControl: { compact: true }, dragRotate: true, touchPitch: true,
   });
   map.touchZoomRotate.enableRotation();
   dark.addEventListener('change', () => map.setStyle(styleUrl()));
@@ -505,16 +505,18 @@
       navigator.geolocation.getCurrentPosition((p2) => onPos(p2, true), () => {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
     }, fail, { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 });
   }
-  // Frame you and the nearest level crossing.
+  // Frame you, your nearest station and nearest level crossing: flat, and no closer than a
+  // town-wide view, so the line and the crossings around you are in sight.
   function fitMeAndNearest() {
     if (!me) return;
     const [lon, lat] = me.geometry.coordinates;
     const n = nearestStation(lon, lat);
     const target = crossings.length ? nearestCrossing(lon, lat) : n.s;
     if (n.miles < 30) {
-      map.fitBounds(new maplibregl.LngLatBounds([lon, lat], [lon, lat]).extend([target.lon, target.lat]), { padding: { top: 100, bottom: 120, left: 60, right: 60 }, maxZoom: 15, pitch: 50, duration: 1600 });
+      const b = new maplibregl.LngLatBounds([lon, lat], [lon, lat]).extend([target.lon, target.lat]).extend([n.s.lon, n.s.lat]);
+      map.fitBounds(b, { padding: { top: 80, bottom: 100, left: 50, right: 50 }, maxZoom: 12.5, pitch: 0, bearing: 0, duration: 1600 });
     } else {
-      map.fitBounds(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds([lon, lat], [lon, lat])), { padding: 40, pitch: 30, duration: 1600 });
+      map.fitBounds(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds([lon, lat], [lon, lat])), { padding: 40, pitch: 0, bearing: 0, duration: 1600 });
     }
   }
   function nearestCrossing(lon, lat) {

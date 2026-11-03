@@ -353,6 +353,7 @@
             return onTrack ? { ...c, d, label: '', soon: false } : null;
           }).filter(Boolean);
           updateCrossings();
+          if (refitWhenCrossingsLoad) { refitWhenCrossingsLoad = false; fitMeAndNearest(); }
           return;
         }
       } catch {}
@@ -417,11 +418,7 @@
       const { longitude: lon, latitude: lat } = pos.coords;
       me = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} };
       map.getSource('me')?.setData({ type: 'FeatureCollection', features: [me] });
-      if (fly && !refine) {
-        const n = nearestStation(lon, lat);
-        if (n.miles < 30) map.flyTo({ center: [lon, lat], zoom: 14, pitch: 50, duration: 1600 });
-        else map.fitBounds(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds([lon, lat], [lon, lat])), { padding: 40, pitch: 30, duration: 1600 });
-      }
+      if (fly && !refine) { fitMeAndNearest(); if (!crossings.length) refitWhenCrossingsLoad = true; }
     };
     const fail = (err) => setLocState('error', err.code === 1 ? 'Location is blocked for this site' : 'Couldn’t find your location. Tap to try again');
     // Fast, low-accuracy fix first (works on Macs without GPS); a high-accuracy fix refines it on phones.
@@ -429,6 +426,24 @@
       onPos(pos);
       navigator.geolocation.getCurrentPosition((p2) => onPos(p2, true), () => {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
     }, fail, { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 });
+  }
+  // Frame you and the nearest level crossing (nearest station until crossings have loaded).
+  let refitWhenCrossingsLoad = false;
+  function fitMeAndNearest() {
+    if (!me) return;
+    const [lon, lat] = me.geometry.coordinates;
+    const n = nearestStation(lon, lat);
+    const target = crossings.length ? nearestCrossing(lon, lat) : n.s;
+    if (n.miles < 30) {
+      map.fitBounds(new maplibregl.LngLatBounds([lon, lat], [lon, lat]).extend([target.lon, target.lat]), { padding: { top: 100, bottom: 120, left: 60, right: 60 }, maxZoom: 15, pitch: 50, duration: 1600 });
+    } else {
+      map.fitBounds(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds([lon, lat], [lon, lat])), { padding: 40, pitch: 30, duration: 1600 });
+    }
+  }
+  function nearestCrossing(lon, lat) {
+    let best = null, bd = Infinity;
+    for (const c of crossings) { const d = Math.hypot((c.lon - lon) * Math.cos(lat * Math.PI / 180), c.lat - lat); if (d < bd) { bd = d; best = c; } }
+    return best;
   }
   locateBtn.onclick = () => locate(true);
   locate(true);

@@ -6,23 +6,22 @@ Read `docs/decisions.md` first. It explains why the web version is throwaway and
 
 ---
 
-## ⚠️ Rule zero: protect the 511 API key
+## Rule zero: be careful with the 511 API key
 
-The key in `API_511_KEY` **also powers MyBusSF, a paid, live app on the App Store**. 511.org rate limits are counted **per key**, so every request we make uses up MyBusSF's allowance. If we hit the limit, real users of a paid app see failures. Treat each request as expensive.
+`API_511_KEY` is a **dedicated development key**, separate from the key behind MyBusSF (the user's live, paid App Store app). **Never use MyBusSF's key in this project.** If a key ever looks like it's shared, stop and ask the user.
 
-**Best fix:** get a separate, free development key at https://511.org/open-data/token and use that instead. **Ask the user about this before making any requests.** Until we have a separate key, these rules are mandatory:
+The dev key still has 511.org's default limit of about 60 requests per hour, so:
 
-1. **Request budget.** No more than **10 requests per hour** from this project, enforced in code, not left to discipline. Keep a counter in a file such as `web/.cache/request-log.json`. When the budget runs out, the proxy refuses to call 511 and returns the cached data instead.
+1. **Request budget.** No more than **40 requests per hour**, enforced in code, which leaves headroom below the limit. Keep a counter in a file such as `web/.cache/request-log.json`. When the budget runs out, the proxy serves cached data instead of calling 511.
 2. **Cache everything on disk** in `web/.cache/` (gitignored):
-   - Static GTFS data (stops, routes, shapes, timetable): fetch **once**, then reuse it for days. Only refetch when the user asks.
-   - Realtime data (vehicle positions, trip updates, alerts): reuse a cached response that is **less than 60 seconds old**.
-3. **Only the server talks to 511.** Every browser tab and every reload reads from the proxy's cache. A page reload must never trigger a request by itself.
-4. **No automatic polling by default.** Live refresh is an explicit on/off toggle in the UI, starts off, refreshes at most once per minute, and turns itself off after 10 minutes.
-5. **Stop on any error.** On a 429 response or any other error, stop calling 511 for 1 hour and log it clearly. Never retry in a loop.
-6. **No load testing, no scripted loops against the API, and no running tests against the live API.** Tests use saved fixture files.
-7. **Log every request** (time, endpoint, status) to the console and the request log, so usage can be checked.
-
-Agents working in this repo, including Claude: before running anything that calls 511, say how many requests it will make.
+   - Static GTFS data (stops, routes, shapes, timetable): fetch once and reuse it for days. Only refetch when the user asks.
+   - Realtime data (vehicle positions, trip updates, alerts): reuse a cached response that is less than 60 seconds old.
+3. **Only the server talks to 511.** Browser tabs and reloads read from the proxy's cache, and a reload never triggers a request by itself.
+4. **Live refresh is an explicit UI toggle**, refreshes at most once per minute and turns itself off after 10 minutes.
+5. **Stop on 429.** On a 429 response, stop calling 511 until the hour resets. Never retry in a loop.
+6. **Tests use saved fixture files**, never the live API.
+7. **Log every request** (time, endpoint, status) so usage can be checked.
+8. **Never print, log or commit the key's value.**
 
 ---
 

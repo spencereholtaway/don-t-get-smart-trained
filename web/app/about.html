@@ -22,16 +22,10 @@
   main { max-width: 480px; margin: 0 auto; padding: calc(env(safe-area-inset-top, 0px) + 16px) 20px calc(env(safe-area-inset-bottom, 0px) + 40px); }
   .back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); text-decoration: none; font-weight: 600; padding: 6px 0; }
   .back svg { width: 18px; height: 18px; }
-  h1 { font-size: 24px; line-height: 1.2; margin: 16px 0 6px; }
-  .lede { color: var(--muted); margin: 0 0 8px; }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 4px 16px; margin: 16px 0; }
-  h2 { font-size: 16px; margin: 14px 0 4px; }
-  p, ul { margin: 6px 0 14px; }
-  ul { padding-left: 20px; }
-  li { margin: 4px 0; }
+  .coffee { margin: 20px 0; }
+  .credits { list-style: none; padding: 0; margin: 0; }
+  .credits li { padding: 10px 0; border-top: 1px solid var(--line); }
   a { color: var(--accent); }
-  .note { color: var(--muted); font-size: 14px; }
-  .coffee { text-align: center; margin: 28px 0 8px; }
 </style>
 </head>
 <body>
@@ -40,46 +34,16 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
     Map
   </a>
-  <h1>Where the data comes from</h1>
-  <p class="lede">This map shows where SMART trains are and when they're about to block a street. Here's what each part is built from.</p>
-
-  <section>
-    <h2>Map</h2>
-    <ul>
-      <li>Streets, buildings and the track come from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors.</li>
-      <li>Map tiles are served by <a href="https://openfreemap.org">OpenFreeMap</a>, using the <a href="https://openmaptiles.org">OpenMapTiles</a> schema.</li>
-      <li>The map is drawn with <a href="https://maplibre.org">MapLibre GL</a>.</li>
-      <li>Stations, routes and the timetable come from SMART's published schedule (GTFS), downloaded from <a href="https://511.org/open-data/transit">511.org</a>.</li>
-      <li>Level crossings are the places in OpenStreetMap where a drivable road crosses the SMART track at street level (not on a bridge or in a tunnel).</li>
-    </ul>
-  </section>
-
-  <section>
-    <h2>Live data</h2>
-    <ul>
-      <li>Live train data is SMART's real-time feed, provided through <a href="https://511.org/open-data/transit">511.org</a>.</li>
-      <li>Train GPS positions refresh about every 2½ minutes, arrival predictions about every 6 minutes, and service alerts every 15 minutes, only while someone has the map open.</li>
-      <li>511 limits how often its data can be requested, so a small server shares one copy of the feed with everyone instead of each phone asking 511 itself.</li>
-    </ul>
-  </section>
-
-  <section>
-    <h2>Predictions</h2>
-    <p><strong>Trains.</strong> Each train starts from the timetable. Live delay predictions and the latest GPS fix shift it to where it really is, and it moves smoothly between updates, speeding up out of stations and slowing into them. Live data is trusted fully for 8 minutes; after that the train eases back to the timetable over the next 2 minutes.</p>
-    <p><strong>Crossings.</strong> Gate timing is based on SMART's <a href="https://www.sonomamarintrain.org/sites/default/files/Board/COC%20Documents/Item%20%237-%20San%20Rafael%20Gate%20Down%20Time%20Presentation_04.06.2022_0.pdf">2022 San Rafael gate-down study</a> of more than 580 closures at 2nd Street:</p>
-    <ul>
-      <li>One train keeps the gates down about 52 seconds: from 30 seconds before it reaches the crossing to 22 seconds after. Federal rules require at least 20 seconds of warning (<a href="https://www.law.cornell.edu/cfr/text/49/234.225">49 CFR 234.225</a>).</li>
-      <li>A train that waits at a station longer than the usual 50–60 seconds keeps the gates just past the station down that much longer. Two trains passing close together keep them down until both have cleared.</li>
-      <li><strong>Yellow:</strong> a train will reach the crossing within 5 minutes.</li>
-      <li><strong>Red:</strong> from a minute before the gates drop until they lift. It then fades over 3 minutes as backed-up traffic clears.</li>
-      <li>The older the live data, the wider the red window: 4 more seconds on each side for every minute since the last update, up to a minute. When there's no live data for a train, it's 45 seconds on each side.</li>
-    </ul>
-    <p class="note">These are estimates. Always follow the signals and gates at the crossing.</p>
-  </section>
-
   <div class="coffee">
     <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="holtaway" data-color="#FFDD00" data-emoji="☕"  data-font="Arial" data-text="Like this? Buy me a coffee!" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff" ></script>
   </div>
+
+  <ul class="credits">
+    <li>Maps from <a href="https://openfreemap.org">OpenFreeMap</a> and <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a></li>
+    <li>Timetable and live data from <a href="https://511.org/open-data/transit">511.org</a></li>
+    <li>Predicted traffic based on a <a href="https://www.sonomamarintrain.org/sites/default/files/Board/COC%20Documents/Item%20%237-%20San%20Rafael%20Gate%20Down%20Time%20Presentation_04.06.2022_0.pdf">report from sonomamarintrain.org</a></li>
+    <li>All times are estimates. Always follow the crossing signals.</li>
+  </ul>
 </main>
 </body>
 </html>

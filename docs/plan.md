@@ -56,7 +56,13 @@ The 40-per-hour budget is a hard ceiling, not a target. During development, aim 
 ## Phase 2: the map screen
 
 - A phone-sized layout (about 390×844), so it maps to an iPhone screen.
-- The map uses Leaflet with OpenStreetMap tiles. It's free and needs no extra key.
+- **Map: smooth and lightly 3D.** Use **MapLibre GL JS**, which is free and open source, renders on the GPU, and supports tilt and rotation. Don't use Leaflet, which is flat and slower when panning and zooming. For map tiles, use a free vector source that needs no key and includes building heights, such as [OpenFreeMap](https://openfreemap.org). Check its usage terms first.
+  - **Light 3D:** a gentle default tilt (about 40–50°), low-key 3D buildings that fade in only when zoomed in, and optionally soft hillshading for the valley terrain. Keep it understated: the trains and stations are the focus, not the scenery.
+  - **Smooth interaction:** pinch to zoom, two-finger rotate and tilt, flick panning with momentum, and animated camera moves (`flyTo`/`easeTo`) when tapping a station, centering on the user or following a train. Avoid instant jumps.
+  - **Draw trains, stations and the route as map layers, not HTML markers.** Trains are a GeoJSON source updated every animation frame, which works fine for SMART's handful of trains. This keeps everything at 60fps and lets trains tilt and rotate with the map. Point each train icon in its direction of travel along the track.
+  - **Polish:** a subtle pulse on the user's location, and a soft glow or animated dash on the route line. Keep the mood calm, not busy.
+  - **Performance:** must feel smooth on a phone-sized viewport. Test on a real phone browser if possible, not just a desktop.
+  - This maps directly to iOS: MapKit has the same tilt, 3D buildings and camera animation, so whatever camera angles and gestures feel right here can carry over. Write down the camera settings that work, such as tilt, zoom levels and animation durations, in `docs/`.
 - On the map:
   - The user's current location, from the browser's geolocation (with a prompt and a fallback if the user says no)
   - The SMART route line

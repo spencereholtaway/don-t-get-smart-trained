@@ -313,7 +313,7 @@
     map.addSource('crossings', { type: 'geojson', data: crossingDotsFC() });
     // a ring pulsing out of each yellow or red crossing
     map.addLayer({ id: 'crossing-pulse', type: 'circle', source: 'crossings', filter: ['has', 'color'],
-      paint: { 'circle-color': ['get', 'color'], 'circle-radius': 6, 'circle-opacity': 0.25, 'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 1, 'circle-stroke-opacity': 0.5, 'circle-pitch-alignment': 'map' } });
+      paint: { 'circle-color': ['get', 'color'], 'circle-radius': 6, 'circle-opacity': 0.25, 'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 1.5, 'circle-stroke-opacity': 0.5, 'circle-pitch-alignment': 'map' } });
     map.addLayer({ id: 'crossings', type: 'circle', source: 'crossings',
       paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 2, 15, 5], 'circle-color': ['coalesce', ['get', 'color'], css.getPropertyValue('--muted').trim()],
         'circle-stroke-color': dark.matches ? '#0f1411' : '#ffffff', 'circle-stroke-width': 1.5, 'circle-pitch-alignment': 'map' } });
@@ -459,7 +459,7 @@
   }
   // Pulse wave, once per PULSE_CYCLE_S: the yellow and
   // red crossings ring one after another in the order trains will block them (soonest first).
-  const PULSE_CYCLE_S = 5, CROSS_RING_S = 1.6, CROSS_START_S = 0, CROSS_SPAN_S = 2.4;
+  const PULSE_CYCLE_S = 5, CROSS_RING_S = 1.8, CROSS_START_S = 0, CROSS_SPAN_S = 2.4;
   function crossingDotsFC() {
     const hot = crossings.filter((c) => c.heat).sort((a, b) => a.next - b.next);
     const step = Math.min(0.4, CROSS_SPAN_S / Math.max(1, hot.length));
@@ -677,9 +677,9 @@
       const ring = (out) => ['let', 'r', ['/', ['-', T, ['coalesce', ['get', 'delay'], 0]], CROSS_RING_S], out];
       const p = ['max', 0, ['min', 1, ['var', 'r']]];
       const fade = (a) => ring(['case', ['any', ['<', ['var', 'r'], 0], ['>=', ['var', 'r'], 1]], 0, ['*', a, ['^', ['-', 1, p], 2]]]);
-      map.setPaintProperty('crossing-pulse', 'circle-radius', ring(['+', 5, ['*', 9, ['-', 1, ['^', ['-', 1, p], 3]]]]));
-      map.setPaintProperty('crossing-pulse', 'circle-opacity', fade(0.15));
-      map.setPaintProperty('crossing-pulse', 'circle-stroke-opacity', fade(0.5));
+      map.setPaintProperty('crossing-pulse', 'circle-radius', ring(['+', 5, ['*', 16, ['-', 1, ['^', ['-', 1, p], 3]]]]));
+      map.setPaintProperty('crossing-pulse', 'circle-opacity', fade(0.25));
+      map.setPaintProperty('crossing-pulse', 'circle-stroke-opacity', fade(0.8));
     }
     const pulse = 10 + 8 * ((Date.now() % 2000) / 2000);
     if (map.getLayer('me-pulse')) { map.setPaintProperty('me-pulse', 'circle-radius', pulse); map.setPaintProperty('me-pulse', 'circle-opacity', 0.3 * (1 - (pulse - 10) / 8)); }

@@ -341,7 +341,7 @@
   const NEAR_MILES = 5, SOON_S = 10 * 60, GATE_LEAD_S = 30;
   let crossings = [], lastW = 0;
   async function loadCrossings() {
-    for (let i = 0; i < 5 && !crossings.length; i++) {
+    while (!crossings.length) { // keep trying until the Worker has them
       try {
         const r = await fetch(`${API_BASE}/crossings`);
         if (r.ok) {

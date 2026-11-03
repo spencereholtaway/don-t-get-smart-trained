@@ -23,6 +23,13 @@ const json = (body, extra = {}) => new Response(JSON.stringify(body), {
 });
 
 export default {
+  // Every few minutes, make sure crossings are stored (no 511 requests here).
+  async scheduled(event, env) {
+    const stub = env.FEEDS.get(env.FEEDS.idFromName('smart'));
+    const res = await stub.fetch(new Request('https://do/crossings'));
+    console.log(`cron crossings: ${res.status}`);
+  },
+
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
     if (request.method !== 'GET') return new Response('Method not allowed', { status: 405, headers: CORS });
@@ -63,7 +70,7 @@ export class Feeds {
     let c = await this.ctx.storage.get('crossings');
     if (!c) {
       const lastTry = (await this.ctx.storage.get('crossingsTriedAt')) ?? 0;
-      if (Date.now() - lastTry > 10 * 60_000) {
+      if (Date.now() - lastTry > 60_000) {
         await this.ctx.storage.put('crossingsTriedAt', Date.now());
         this.crossingsInflight ??= this.fetchCrossings().finally(() => { this.crossingsInflight = null; });
         c = await this.crossingsInflight;
@@ -76,27 +83,32 @@ export class Feeds {
   async fetchCrossings() {
     // Bounding box of the SMART line (south, west, north, east), padded slightly.
     const query = '[out:json][timeout:60];node["railway"="level_crossing"](37.94,-122.83,38.56,-122.50);out body;';
-    try {
-      const res = await fetch(this.env.UPSTREAM_OVERPASS || 'https://overpass-api.de/api/interpreter', {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'smart-trains-worker (SMART train crossing map prototype)' },
-        body: 'data=' + encodeURIComponent(query),
-      });
-      if (!res.ok) { console.log(`overpass ${res.status}`); return null; }
-      const osm = await res.json();
-      const c = {
-        fetchedAt: Date.now(),
-        source: 'OpenStreetMap contributors (ODbL)',
-        crossings: (osm.elements ?? []).filter((e) => e.type === 'node').map((e) => ({
-          id: e.id, lat: e.lat, lon: e.lon, name: e.tags?.name ?? null,
-        })),
-      };
-      await this.ctx.storage.put('crossings', c);
-      return c;
-    } catch (err) {
-      console.log(`overpass failed: ${err?.message ?? err}`);
-      return null;
+    const servers = this.env.UPSTREAM_OVERPASS ? [this.env.UPSTREAM_OVERPASS] : [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.private.coffee/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+      'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+    ];
+    for (const url of servers) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json', 'user-agent': 'smart-trains-worker/1.0 (SMART train crossing map prototype)' },
+          body: 'data=' + encodeURIComponent(query),
+        });
+        if (!res.ok) { console.log(`overpass ${url} -> ${res.status}`); continue; }
+        const osm = await res.json();
+        const crossings = (osm.elements ?? []).filter((e) => e.type === 'node').map((e) => ({ id: e.id, lat: e.lat, lon: e.lon, name: e.tags?.name ?? null }));
+        if (!crossings.length) { console.log(`overpass ${url} -> 0 crossings`); continue; }
+        const c = { fetchedAt: Date.now(), source: 'OpenStreetMap contributors (ODbL)', crossings };
+        await this.ctx.storage.put('crossings', c);
+        console.log(`overpass ${url} -> stored ${crossings.length} crossings`);
+        return c;
+      } catch (err) {
+        console.log(`overpass ${url} failed: ${err?.message ?? err}`);
+      }
     }
+    return null;
   }
 
   async log() { return (await this.ctx.storage.get('log')) ?? []; }
@@ -138,6 +150,7 @@ export class Feeds {
       const res = await fetch(`${base}/${name}?agency=SA&api_key=${encodeURIComponent(key)}`);
       entry.status = res.status;
       await this.ctx.storage.put('log', log);
+      console.log(`511 ${name} -> ${res.status}`);
       if (res.status !== 200) return;
       const buf = new Uint8Array(await res.arrayBuffer());
       const T = GtfsRealtimeBindings.transit_realtime.FeedMessage;

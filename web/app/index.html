@@ -21,37 +21,14 @@
   html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.35 var(--font); }
   #app { position: relative; height: 100%; max-width: 480px; margin: 0 auto; overflow: hidden; }
   #map { position: absolute; inset: 0; }
-  .panel { background: var(--panel); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
-    border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.12); }
-  #top { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 10px); left: 12px; right: 12px; display: grid; gap: 8px; z-index: 2; }
-  #status { padding: 9px 12px; display: flex; gap: 10px; align-items: center; font-size: 13px; }
-  #status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
-  #status .dot.live { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
-  #status .text { min-width: 0; flex: 1; }
-  #status b { font-weight: 600; }
-  #status .sub { color: var(--muted); font-variant-numeric: tabular-nums; }
-  #alerts { padding: 10px 12px; font-size: 13px; border-color: var(--late); }
-  #bottom { position: absolute; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); display: grid; gap: 8px; z-index: 2; }
-  #controls { padding: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .seg { display: inline-flex; background: var(--accent-soft); border-radius: 10px; padding: 2px; }
-  .seg button, .btn { font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--fg); padding: 7px 10px; border-radius: 8px; cursor: pointer; }
-  .seg button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 3px rgba(0,0,0,.15); font-weight: 600; }
-  .btn { background: var(--accent); color: #fff; font-weight: 600; margin-left: auto; }
-  @media (prefers-color-scheme: dark) { .btn { color: #0f1411; } }
+  #locate { position: absolute; right: 14px; bottom: calc(env(safe-area-inset-bottom, 0px) + 28px); z-index: 2;
+    width: 40px; height: 40px; border-radius: 50%; border: 0; padding: 0; display: grid; place-items: center; cursor: pointer;
+    background: var(--panel); color: #2f7de1; box-shadow: 0 2px 10px rgba(0,0,0,.18); -webkit-tap-highlight-color: transparent; }
+  #locate svg { width: 20px; height: 20px; }
+  #locate.busy svg { animation: spin 1.2s linear infinite; }
+  #locate.error { color: var(--late); }
+  @keyframes spin { to { transform: rotate(360deg); } }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  #clock { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); padding: 0 4px; }
-  #sheet { padding: 14px 14px 10px; max-height: 46vh; overflow: auto; }
-  #sheet h2 { margin: 0; font-size: 19px; text-wrap: balance; }
-  #sheet .meta { color: var(--muted); font-size: 13px; margin: 2px 0 10px; }
-  #sheet h3 { margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
-  .row { display: grid; grid-template-columns: 74px 1fr auto; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; align-items: baseline; }
-  .row .t { font-weight: 600; }
-  .row .trip { color: var(--muted); font-size: 13px; }
-  .tag { font-size: 12px; font-weight: 600; white-space: nowrap; }
-  .tag.late { color: var(--late); } .tag.early { color: var(--early); } .tag.on { color: var(--accent); } .tag.sched { color: var(--muted); font-weight: 500; }
-  .close { float: right; font: inherit; font-size: 20px; line-height: 1; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 4px; }
-  .empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
-  .note { color: var(--muted); font-size: 12px; padding: 4px 2px 0; }
   .maplibregl-ctrl-attrib { font-size: 10px; }
   .maplibregl-ctrl-bottom-right { bottom: 0; }
   [hidden] { display: none !important; }
@@ -61,20 +38,9 @@
 <div id="app">
   <div id="map" role="region" aria-label="Map of SMART stations and trains"></div>
 
-  <div id="top">
-    <div id="status" class="panel" aria-live="polite">
-      <span class="dot" id="statusDot"></span>
-      <span class="text"><b id="statusMain">Loading…</b><br><span class="sub" id="statusSub"></span></span>
-    </div>
-    <div id="alerts" class="panel" hidden></div>
-  </div>
-
-  <div id="bottom">
-    <div id="sheet" class="panel" hidden></div>
-    <div id="controls" class="panel">
-      <button class="btn" id="locate">Find me</button>
-    </div>
-  </div>
+  <button id="locate" aria-label="Show my location" title="Show my location">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.6 2.4 2.9 10.2c-.8.3-.7 1.5.1 1.7l7.5 1.6 1.6 7.5c.2.8 1.4.9 1.7.1l7.8-18.7z"/></svg>
+  </button>
 </div>
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -83,9 +49,14 @@
   const TZ = 'America/Los_Angeles';
   const FRESH_S = 8 * 60;    // live predictions used fully up to this age
   const STALE_S = 10 * 60;   // after this, plain timetable
+  // Live data comes from the Cloudflare Worker in web/worker/, which holds the 511 key and
+  // caps 511 usage server-side. ?api=<url> points the page at another copy (e.g. wrangler dev).
+  const LIVE_URL = new URLSearchParams(location.search).get('api') || 'https://smart-trains.smart-trains-worker.workers.dev/realtime';
+  const POLL_MS = 60 * 1000;          // the Worker refreshes each 511 feed at most every 4 min
+  const IDLE_MS = 10 * 60 * 1000;     // stop polling after 10 min without interaction
+  const BLEND_S = 25;                 // new live data eases in over this many seconds
   const data = await (await fetch('data.json', { cache: 'no-cache' })).json();
-  const rt = data.realtime;
-  const snapshotAt = rt.tripUpdatesAt || rt.vehiclesAt;
+  const tripsById = Object.fromEntries(data.trips.map((t) => [t.id, t]));
   const stationsById = Object.fromEntries(data.stations.map((s) => [s.id, s]));
 
   // ---------- time ----------
@@ -139,9 +110,11 @@
   // ---------- realtime: predicted timeline per trip ----------
   // Each trip update lists predicted times for the stops still ahead. We turn those into
   // a full adjusted timeline: predicted where we have it, scheduled + nearest known delay elsewhere.
+  let predicted = {}, prevPredicted = null, blendStart = 0, snapshotAt = null;
+  function buildPredicted(rt) {
   const predicted = {};
   for (const u of rt.tripUpdates) {
-    const trip = data.trips.find((t) => t.id === u.trip);
+    const trip = tripsById[u.trip];
     if (!trip) continue;
     const y = u.startDate, base = la(Date.UTC(+y.slice(0, 4), +y.slice(4, 6) - 1, +y.slice(6, 8), 20) / 1000).midnight;
     const bySeq = {};
@@ -164,6 +137,9 @@
       stops[i][2] = Math.max(stops[i][2], stops[i][1]);
     }
     predicted[trip.id] = { stops, vehicle: u.vehicle, delayNow: firstDelay };
+  }
+  correctWithGps(rt, predicted);
+  return predicted;
   }
 
   // ---------- motion ----------
@@ -189,8 +165,9 @@
     }
     return { d: best.d, meters: best.e * 111320 };
   }
+  function correctWithGps(rt, predicted) {
   for (const v of rt.vehicles) {
-    const p = predicted[v.trip], trip = data.trips.find((t) => t.id === v.trip);
+    const p = predicted[v.trip], trip = tripsById[v.trip];
     if (!p || !trip) continue;
     const { d, meters } = projectOnShape(trip.shape, v.lon, v.lat);
     if (meters > 300) continue; // too far from the track to trust
@@ -205,6 +182,15 @@
     a[2] = Math.min((T - q * b[1]) / (1 - q), T); // departure time that puts the train at d at time T
     a[1] = Math.min(a[1], a[2]);
     for (let j = i; j > 0; j--) { if (s[j - 1][2] > s[j][1] - 30) { s[j - 1][2] = s[j][1] - 30; s[j - 1][1] = Math.min(s[j - 1][1], s[j - 1][2]); } }
+  }
+  }
+  function applyRealtime(rt) {
+    const at = rt.tripUpdatesAt || rt.vehiclesAt;
+    if (!at || at === snapshotAt) return;
+    prevPredicted = snapshotAt ? predicted : null;
+    blendStart = nowS();
+    predicted = buildPredicted(rt);
+    snapshotAt = at;
   }
   function distAt(stops, t) {
     const first = stops[0], last = stops[stops.length - 1];
@@ -222,14 +208,18 @@
 
   function trainsAt(t) {
     const d = la(t), services = activeServices(d.ymd, d.dow), secs = t - d.midnight;
-    const age = t - snapshotAt, sameDay = la(snapshotAt).ymd === d.ymd;
+    const age = snapshotAt ? t - snapshotAt : Infinity, sameDay = snapshotAt != null && la(snapshotAt).ymd === d.ymd;
     // weight of live predictions: 1 while fresh, fading to 0 by STALE_S, 0 before the snapshot or on other days
     const w = !sameDay || age < -60 ? 0 : age <= FRESH_S ? 1 : age >= STALE_S ? 0 : 1 - (age - FRESH_S) / (STALE_S - FRESH_S);
     const out = [];
     for (const trip of data.trips) {
       if (!services.has(trip.service)) continue;
       const sched = distAt(trip.stops, secs);
-      const live = predicted[trip.id] && w > 0 ? distAt(predicted[trip.id].stops, secs) : null;
+      let live = predicted[trip.id] && w > 0 ? distAt(predicted[trip.id].stops, secs) : null;
+      // ease from the previous prediction to the new one instead of jumping
+      const k = Math.min(1, (t - blendStart) / BLEND_S);
+      const prev = k < 1 && prevPredicted?.[trip.id] ? distAt(prevPredicted[trip.id].stops, secs) : null;
+      if (live && prev) live = { ...live, d: prev.d + (live.d - prev.d) * k };
       let pos = sched, isLive = false;
       if (live && sched) { pos = { ...live, d: sched.d + (live.d - sched.d) * w }; isLive = w > 0.5; }
       else if (live && w > 0.5) { pos = live; isLive = true; }
@@ -251,7 +241,7 @@
   const bounds = routeCoords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(routeCoords[0], routeCoords[0]));
 
   const map = new maplibregl.Map({
-    container: 'map', style: styleUrl(), bounds, fitBoundsOptions: { padding: { top: 90, bottom: 110, left: 30, right: 30 } },
+    container: 'map', style: styleUrl(), bounds, fitBoundsOptions: { padding: { top: 40, bottom: 40, left: 30, right: 30 } },
     pitch: 45, maxPitch: 70, minZoom: 7, attributionControl: { compact: true }, dragRotate: true, touchPitch: true,
   });
   map.touchZoomRotate.enableRotation();
@@ -311,79 +301,65 @@
   let me = null;
   map.on('style.load', addAppLayers);
 
-  // ---------- interactions ----------
-  const sheet = document.getElementById('sheet');
-  function closeSheet() { sheet.hidden = true; }
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-
-  // location
+  // ---------- location ----------
   const locateBtn = document.getElementById('locate');
   function nearestStation(lon, lat) {
     let best = null, bd = Infinity;
     for (const s of data.stations) { const d = Math.hypot((s.lon - lon) * Math.cos(lat * Math.PI / 180), s.lat - lat); if (d < bd) { bd = d; best = s; } }
     return { s: best, miles: bd * 69.1 };
   }
+  function setLocState(state, why) {
+    locateBtn.classList.toggle('busy', state === 'busy');
+    locateBtn.classList.toggle('error', state === 'error');
+    locateBtn.title = locateBtn.ariaLabel = why || 'Show my location';
+  }
   function locate(fly) {
-    if (!navigator.geolocation) return showLocMsg('This browser can’t share your location. ');
-    locateBtn.textContent = 'Finding…';
+    if (!navigator.geolocation) return setLocState('error', 'This browser can’t share your location');
+    setLocState('busy');
     const onPos = (pos, refine) => {
       if (!map.getSource('me')) return map.once('style.load', () => onPos(pos, refine)); // map style still loading
-      locateBtn.textContent = 'Find me';
+      setLocState('ok');
       const { longitude: lon, latitude: lat } = pos.coords;
       me = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} };
       map.getSource('me')?.setData({ type: 'FeatureCollection', features: [me] });
-      const n = nearestStation(lon, lat);
       if (fly && !refine) {
-        if (n.miles < 30) {
-          map.fitBounds(new maplibregl.LngLatBounds([lon, lat], [lon, lat]).extend([n.s.lon, n.s.lat]), { padding: { top: 120, bottom: 300, left: 60, right: 60 }, maxZoom: 14, pitch: 50, duration: 1600 });
-        } else {
-          map.fitBounds(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds([lon, lat], [lon, lat])), { padding: { top: 100, bottom: 160, left: 30, right: 30 }, pitch: 30, duration: 1600 });
-          showLocMsg(`You’re about ${Math.round(n.miles)} miles from the nearest SMART station (${n.s.name}).`);
-        }
+        const n = nearestStation(lon, lat);
+        if (n.miles < 30) map.flyTo({ center: [lon, lat], zoom: 14, pitch: 50, duration: 1600 });
+        else map.fitBounds(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds([lon, lat], [lon, lat])), { padding: 40, pitch: 30, duration: 1600 });
       }
     };
-    const fail = (err) => {
-      locateBtn.textContent = 'Find me';
-      const mac = /Macintosh/.test(navigator.userAgent);
-      const msg = err.code === 1
-        ? (mac ? 'Location is blocked. If you allowed it in the browser, also turn it on for this browser in macOS System Settings › Privacy & Security › Location Services.' : 'Location is blocked for this site. Allow it in your browser settings.')
-        : err.code === 3 ? 'Finding your location took too long. Tap Find me to try again.'
-        : (mac ? 'Your Mac couldn’t find its location. Check that Wi‑Fi is on and that Location Services is on for this browser in System Settings.' : 'Your device couldn’t find its location. Tap Find me to try again.');
-      showLocMsg(msg);
-    };
+    const fail = (err) => setLocState('error', err.code === 1 ? 'Location is blocked for this site' : 'Couldn’t find your location. Tap to try again');
     // Fast, low-accuracy fix first (works on Macs without GPS); a high-accuracy fix refines it on phones.
     navigator.geolocation.getCurrentPosition((pos) => {
       onPos(pos);
       navigator.geolocation.getCurrentPosition((p2) => onPos(p2, true), () => {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
     }, fail, { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 });
   }
-  function showLocMsg(msg) { sheet.innerHTML = `<button class="close" aria-label="Close">×</button><div class="meta" style="margin:0">${esc(msg)}</div>`; sheet.hidden = false; sheet.querySelector('.close').onclick = closeSheet; }
   locateBtn.onclick = () => locate(true);
   locate(true);
 
-  // alerts
-  const alertsEl = document.getElementById('alerts');
-  if (rt.alerts.length) { alertsEl.innerHTML = rt.alerts.map((a) => `<b>${esc(a.header)}</b>${a.description ? `<br>${esc(a.description)}` : ''}`).join('<hr>'); alertsEl.hidden = false; }
+  // ---------- live data ----------
+  // Polls the Worker while the page is visible and someone has touched it in the last 10 minutes.
+  // The Worker serves from its cache, so polling here never raises 511 usage.
+  applyRealtime(data.realtime);
+  let activeUntil = Date.now() + IDLE_MS;
+  async function poll() {
+    if (document.hidden || Date.now() > activeUntil) return;
+    try { const r = await fetch(LIVE_URL, { cache: 'no-store' }); if (r.ok) applyRealtime(await r.json()); } catch {}
+  }
+  function wake() { const idle = Date.now() > activeUntil; activeUntil = Date.now() + IDLE_MS; if (idle) poll(); }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+  for (const ev of ['pointerdown', 'wheel', 'keydown']) addEventListener(ev, wake, { passive: true });
+  setInterval(poll, POLL_MS);
+  poll();
 
   // ---------- frame loop ----------
-  let lastFrame = { trains: [] }, lastStatus = 0;
-  const statusMain = document.getElementById('statusMain'), statusSub = document.getElementById('statusSub'), statusDot = document.getElementById('statusDot');
   function frame() {
-    const t = nowS();
-    lastFrame = trainsAt(t);
+    const { trains } = trainsAt(nowS());
     const src = map.getSource('trains');
-    if (src) src.setData({ type: 'FeatureCollection', features: lastFrame.trains.map((x) => ({ type: 'Feature', properties: { trip: x.trip.id, bearing: x.bearing, live: x.live }, geometry: { type: 'Point', coordinates: [x.lon, x.lat] } })) });
+    if (src) src.setData({ type: 'FeatureCollection', features: trains.map((x) => ({ type: 'Feature', properties: { trip: x.trip.id, bearing: x.bearing, live: x.live }, geometry: { type: 'Point', coordinates: [x.lon, x.lat] } })) });
     const pulse = 10 + 8 * ((Date.now() % 2000) / 2000);
     if (map.getLayer('me-pulse')) { map.setPaintProperty('me-pulse', 'circle-radius', pulse); map.setPaintProperty('me-pulse', 'circle-opacity', 0.3 * (1 - (pulse - 10) / 8)); }
-
-    if (Date.now() - lastStatus > 250) {
-      lastStatus = Date.now();
-      const n = lastFrame.trains.length, liveN = lastFrame.trains.filter((x) => x.live).length;
-      statusDot.classList.toggle('live', liveN > 0);
-      statusMain.textContent = n === 0 ? 'No trains running right now' : `${n} train${n > 1 ? 's' : ''} running${liveN ? ` · ${liveN} with live data` : ' · timetable estimates'}`;
-      const snap = `Live data from ${dayFmt.format(new Date(snapshotAt * 1000))} ${hm(snapshotAt)}`;
-      statusSub.textContent = `${snap} (${ago(Date.now() / 1000 - snapshotAt)}). Not updating live yet.`;
-    }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

@@ -1,0 +1,12 @@
+{
+  "name": "smart-trains",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "durable_objects": {
+    "bindings": [{ "name": "FEEDS", "class_name": "Feeds" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Feeds"] }],
+  // API_511_KEY is a secret (wrangler secret put), never in this file.
+  "observability": { "enabled": true }
+}

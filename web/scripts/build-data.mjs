@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CACHE_DIR, FIXTURES_DIR } from '../lib/api511.mjs';
+import { shapeTripUpdates, shapeVehicles, shapeAlerts } from '../worker/src/shape.js';
 
 const GTFS = path.join(CACHE_DIR, 'gtfs');
 const OUT = path.resolve(CACHE_DIR, '..', 'app', 'data.json');
@@ -74,34 +75,7 @@ const tu = newest('tripupdates');
 const vp = newest('vehiclepositions');
 const sa = newest('servicealerts');
 
-const realtime = {
-  // Predicted absolute times (unix seconds) per trip; the page turns them into delays.
-  tripUpdates: (tu?.entity ?? []).map((e) => ({
-    trip: e.tripUpdate.trip.tripId,
-    startDate: e.tripUpdate.trip.startDate,
-    vehicle: e.tripUpdate.vehicle?.id ?? null,
-    stops: e.tripUpdate.stopTimeUpdate.map((u) => [u.stopSequence, u.arrival?.time ?? null, u.departure?.time ?? null]),
-  })),
-  tripUpdatesAt: tu?.header.timestamp ?? null,
-  // Only vehicles assigned to a trip are trains in service; the rest are parked or trailing cars.
-  vehicles: (vp?.entity ?? []).filter((e) => e.vehicle.trip?.tripId).map((e) => ({
-    id: e.vehicle.vehicle.id,
-    trip: e.vehicle.trip.tripId,
-    lat: r5(e.vehicle.position.latitude), lon: r5(e.vehicle.position.longitude),
-    bearing: e.vehicle.position.bearing ?? null,
-    speed: e.vehicle.position.speed ?? null,
-    status: e.vehicle.currentStatus ?? null,
-    stopSeq: e.vehicle.currentStopSequence ?? null,
-    at: e.vehicle.timestamp,
-  })),
-  vehiclesAt: vp?.header.timestamp ?? null,
-  alerts: (sa?.entity ?? []).map((e) => ({
-    id: e.id,
-    header: e.alert?.headerText?.translation?.[0]?.text ?? '',
-    description: e.alert?.descriptionText?.translation?.[0]?.text ?? '',
-  })),
-  alertsAt: sa?.header.timestamp ?? null,
-};
+const realtime = { ...shapeTripUpdates(tu), ...shapeVehicles(vp), ...shapeAlerts(sa) };
 
 const data = { builtAt: new Date().toISOString(), timezone: 'America/Los_Angeles', routeColor: '#4d6d51', stations, shapes, trips, calendar, exceptions, realtime };
 fs.mkdirSync(path.dirname(OUT), { recursive: true });

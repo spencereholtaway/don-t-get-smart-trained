@@ -40,6 +40,9 @@ The 40-per-hour budget is a hard ceiling, not a target. During development, aim 
 - Confirm `API_511_KEY` is set. Never print, log or commit its value.
 - Make **one** request to download the SMART static GTFS data (operator `SA`, from the `/transit/datafeeds` endpoint), save it to `web/.cache/`, and unzip it.
 - Make **one** request to a realtime feed to see what SMART actually publishes. Vehicle positions may not exist for SMART; trip updates and alerts are more likely. Save the response as a test fixture in `web/fixtures/`.
+- Check the other SMART data sources too (no 511 requests needed):
+  - SMART's static GTFS feed may be downloadable directly from the agency, without counting against 511's limit. Its [Mobility Database listing](https://mobilitydatabase.org/feeds/gtfs/mdb-815) shows the source URL.
+  - The Mobility Database lists a SMART vehicle positions feed from Swiftly ([mdb-3224](https://mobilitydatabase.org/feeds/mdb-3224)). It needs its own Swiftly API key, sent in a header. Note what it would take to get access, but don't sign up for anything.
 - Write what you find in `docs/data.md`: which feeds exist, which fields are populated, how the data is shaped and anything surprising. **This doc carries over to iOS.**
 
 ## Phase 1: proxy server
@@ -61,7 +64,21 @@ The 40-per-hour budget is a hard ceiling, not a target. During development, aim 
   - Live train positions, if SMART publishes them; otherwise trains placed by interpolating between stops, clearly labeled as estimates
   - Service alerts in a banner or list
 - A small status line showing how old the data is ("updated 40s ago"), the live-refresh toggle, and the request count from `/api/usage`.
-- Keep it scrappy. This code gets thrown away.
+- Keep it scrappy. This code gets thrown away. The **approach to moving trains below is worth getting right**, though, because it carries over to iOS. Write it up in `docs/train-motion.md`.
+
+### Moving trains smoothly with few requests
+
+The idea: **the timetable moves the trains, and live data only nudges them.** A train's position is calculated from the clock every frame, so trains move smoothly even with no new data. Live updates only adjust how late each train is.
+
+1. **Work along the track, not in lat/lon.** Build one line along the track from GTFS `shapes.txt` and precompute the distance of each point along it. Place each station at its distance along that line. A train's position is then a single number, its distance along the track, which gets converted to a map point when drawing. That way trains follow the curves instead of cutting across them.
+2. **Use the timetable as the baseline.** For each trip, `stop_times.txt` says when the train leaves station A and arrives at station B. At time `t`, the train is between those stations. Use an ease-in/ease-out curve, not a straight line, so it speeds up from A and slows into B. It waits at each station for the scheduled dwell time. **This needs no requests at all.**
+3. **Live data sets a delay for each trip.** A trip update gives a predicted delay at the next stops. Position = timetable position at `t − delay`. If the feed has vehicle positions, project the GPS point onto the track and convert it into an implied delay. Don't snap the train to the raw GPS point, because GPS is noisy.
+4. **Blend corrections instead of jumping.** Keep a *displayed* delay and a *target* delay. When new data arrives, only the target changes. The displayed delay moves toward it over about 20–30 seconds, so the train looks like it's speeding up or slowing down.
+5. **Trains never move backward.** If the train is shown ahead of where it really is, it slows down or holds at the next station until it's back in line. Holding at a station looks natural. If it's behind, it can move up to about 1.5× speed to catch up.
+6. **Show uncertainty as data ages.** Fresh data looks solid. As it gets older, keep using the last known delay but show the train as an estimate (faded marker, "estimated" label). After about 10 minutes without data, fall back to the plain timetable and say so.
+7. **Each refresh is one request for all trains.** Each 511 realtime feed (e.g. trip updates, filtered to `agency=SA`) returns every SMART train in one response. Because the timetable drives motion, refreshing every **2–5 minutes** is enough, and only while the page is visible. That's 12–30 requests per hour at most, and zero in fixture mode.
+
+Test it in fixture mode with a fake clock: speed time up, make up delays, and swap fixtures to simulate a new update arriving. Check that trains never jump or move backward.
 
 ## Phase 3: write down what we learned
 

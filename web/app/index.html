@@ -72,16 +72,6 @@
   <div id="bottom">
     <div id="sheet" class="panel" hidden></div>
     <div id="controls" class="panel">
-      <div class="seg" role="group" aria-label="Clock">
-        <button id="modeNow" aria-pressed="true">Now</button>
-        <button id="modeReplay" aria-pressed="false">Replay</button>
-      </div>
-      <div class="seg" role="group" aria-label="Speed" id="speedSeg">
-        <button data-speed="1" aria-pressed="true">1×</button>
-        <button data-speed="10" aria-pressed="false">10×</button>
-        <button data-speed="60" aria-pressed="false">60×</button>
-      </div>
-      <span id="clock"></span>
       <button class="btn" id="locate">Find me</button>
     </div>
   </div>
@@ -117,15 +107,7 @@
     return `${Math.round(s / 86400)} days ago`;
   }
 
-  const clock = { mode: 'now', speed: 1, simStart: Date.now() / 1000, wallStart: Date.now() / 1000 };
-  function nowS() { return clock.simStart + (Date.now() / 1000 - clock.wallStart) * clock.speed; }
-  function setClock(mode, speed) {
-    const changed = mode !== clock.mode;
-    clock.simStart = changed ? (mode === 'replay' ? snapshotAt : Date.now() / 1000) : nowS();
-    clock.wallStart = Date.now() / 1000;
-    clock.mode = mode; clock.speed = speed;
-    if (changed) resetMotion();
-  }
+  const nowS = () => Date.now() / 1000;
 
   // ---------- service calendar ----------
   const activeCache = {};
@@ -237,7 +219,6 @@
   }
 
   const shown = {}; // tripId -> last displayed distance (trains never move backward)
-  function resetMotion() { for (const k in shown) delete shown[k]; }
 
   function trainsAt(t) {
     const d = la(t), services = activeServices(d.ymd, d.dow), secs = t - d.midnight;
@@ -458,46 +439,28 @@
   locateBtn.onclick = () => locate(true);
   locate(true);
 
-  // clock controls
-  const modeNow = document.getElementById('modeNow'), modeReplay = document.getElementById('modeReplay');
-  const speedBtns = [...document.querySelectorAll('#speedSeg button')];
-  function syncButtons() {
-    modeNow.setAttribute('aria-pressed', clock.mode === 'now');
-    modeReplay.setAttribute('aria-pressed', clock.mode === 'replay');
-    for (const b of speedBtns) b.setAttribute('aria-pressed', +b.dataset.speed === clock.speed);
-  }
-  modeNow.onclick = () => { setClock('now', 1); syncButtons(); renderSheet(); };
-  modeReplay.onclick = () => { setClock('replay', clock.speed); syncButtons(); renderSheet(); };
-  for (const b of speedBtns) b.onclick = () => { setClock(clock.mode, +b.dataset.speed); syncButtons(); };
-
   // alerts
   const alertsEl = document.getElementById('alerts');
   if (rt.alerts.length) { alertsEl.innerHTML = rt.alerts.map((a) => `<b>${esc(a.header)}</b>${a.description ? `<br>${esc(a.description)}` : ''}`).join('<hr>'); alertsEl.hidden = false; }
 
   // ---------- frame loop ----------
   let lastFrame = { trains: [] }, lastSheet = 0, lastStatus = 0;
-  const statusMain = document.getElementById('statusMain'), statusSub = document.getElementById('statusSub'), statusDot = document.getElementById('statusDot'), clockEl = document.getElementById('clock');
+  const statusMain = document.getElementById('statusMain'), statusSub = document.getElementById('statusSub'), statusDot = document.getElementById('statusDot');
   function frame() {
     const t = nowS();
     lastFrame = trainsAt(t);
     const src = map.getSource('trains');
     if (src) src.setData({ type: 'FeatureCollection', features: lastFrame.trains.map((x) => ({ type: 'Feature', properties: { trip: x.trip.id, bearing: x.bearing, live: x.live }, geometry: { type: 'Point', coordinates: [x.lon, x.lat] } })) });
-    const gps = map.getSource('gps');
-    if (gps) {
-      const showGps = clock.mode === 'replay' && Math.abs(t - rt.vehiclesAt) < 60;
-      gps.setData({ type: 'FeatureCollection', features: showGps ? rt.vehicles.map((v) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [v.lon, v.lat] } })) : [] });
-    }
     const pulse = 10 + 8 * ((Date.now() % 2000) / 2000);
     if (map.getLayer('me-pulse')) { map.setPaintProperty('me-pulse', 'circle-radius', pulse); map.setPaintProperty('me-pulse', 'circle-opacity', 0.3 * (1 - (pulse - 10) / 8)); }
 
     if (Date.now() - lastStatus > 250) {
       lastStatus = Date.now();
       const n = lastFrame.trains.length, liveN = lastFrame.trains.filter((x) => x.live).length;
-      clockEl.textContent = (clock.mode === 'replay' || clock.speed !== 1 ? dayFmt.format(new Date(t * 1000)) + ' ' : '') + timeFmtS.format(new Date(t * 1000));
       statusDot.classList.toggle('live', liveN > 0);
       statusMain.textContent = n === 0 ? 'No trains running right now' : `${n} train${n > 1 ? 's' : ''} running${liveN ? ` · ${liveN} with live data` : ' · timetable estimates'}`;
       const snap = `Live data from ${dayFmt.format(new Date(snapshotAt * 1000))} ${hm(snapshotAt)}`;
-      statusSub.textContent = clock.mode === 'replay' ? `Replaying the ${hm(snapshotAt)} snapshot at ${clock.speed}×` : `${snap} (${ago(Date.now() / 1000 - snapshotAt)}). Auto-refresh isn’t set up yet.`;
+      statusSub.textContent = `${snap} (${ago(Date.now() / 1000 - snapshotAt)}). Not updating live yet.`;
     }
     if (sheetKind && Date.now() - lastSheet > 1000) { lastSheet = Date.now(); renderSheet(); }
     requestAnimationFrame(frame);

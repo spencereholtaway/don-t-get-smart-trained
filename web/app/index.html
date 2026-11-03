@@ -505,15 +505,17 @@
       navigator.geolocation.getCurrentPosition((p2) => onPos(p2, true), () => {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
     }, fail, { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 });
   }
-  // Frame you, your nearest station and nearest level crossing: flat, and no closer than a
-  // town-wide view, so the line and the crossings around you are in sight.
+  // Frame you and the nearest train ("is a train coming?"): flat, and no closer than a town-wide
+  // view. With no train running, frame you, your nearest station and nearest crossing instead.
   function fitMeAndNearest() {
     if (!me) return;
     const [lon, lat] = me.geometry.coordinates;
     const n = nearestStation(lon, lat);
-    const target = crossings.length ? nearestCrossing(lon, lat) : n.s;
     if (n.miles < 30) {
-      const b = new maplibregl.LngLatBounds([lon, lat], [lon, lat]).extend([target.lon, target.lat]).extend([n.s.lon, n.s.lat]);
+      const b = new maplibregl.LngLatBounds([lon, lat], [lon, lat]);
+      const t = nearestTrain();
+      if (t) b.extend([t.lon, t.lat]);
+      else { b.extend([n.s.lon, n.s.lat]); if (crossings.length) { const c = nearestCrossing(lon, lat); b.extend([c.lon, c.lat]); } }
       map.fitBounds(b, { padding: { top: 80, bottom: 100, left: 50, right: 50 }, maxZoom: 12.5, pitch: 0, bearing: 0, duration: 1600 });
     } else {
       map.fitBounds(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds([lon, lat], [lon, lat])), { padding: 40, pitch: 0, bearing: 0, duration: 1600 });

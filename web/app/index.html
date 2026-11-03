@@ -313,7 +313,7 @@
     map.addSource('crossings', { type: 'geojson', data: crossingDotsFC() });
     // a ring pulsing out of each yellow or red crossing
     map.addLayer({ id: 'crossing-pulse', type: 'circle', source: 'crossings', filter: ['has', 'color'],
-      paint: { 'circle-color': ['get', 'color'], 'circle-radius': 6, 'circle-opacity': 0.25, 'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.8, 'circle-pitch-alignment': 'map' } });
+      paint: { 'circle-color': ['get', 'color'], 'circle-radius': 6, 'circle-opacity': 0.25, 'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 1, 'circle-stroke-opacity': 0.5, 'circle-pitch-alignment': 'map' } });
     map.addLayer({ id: 'crossings', type: 'circle', source: 'crossings',
       paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 2, 15, 5], 'circle-color': ['coalesce', ['get', 'color'], css.getPropertyValue('--muted').trim()],
         'circle-stroke-color': dark.matches ? '#0f1411' : '#ffffff', 'circle-stroke-width': 1.5, 'circle-pitch-alignment': 'map' } });
@@ -330,7 +330,7 @@
     // pulse and direction arrow, for when you're zoomed out (they fade away at street zoom)
     map.addSource('train-marks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, maxzoom: 14 });
     map.addLayer({ id: 'train-pulse', type: 'circle', source: 'train-marks', filter: ['==', ['get', 'kind'], 'pulse'],
-      paint: { 'circle-color': accent, 'circle-radius': 14, 'circle-opacity': 0.2, 'circle-stroke-color': accent, 'circle-stroke-width': 2.5, 'circle-stroke-opacity': 0.8, 'circle-pitch-alignment': 'viewport' } });
+      paint: { 'circle-color': accent, 'circle-radius': 14, 'circle-opacity': 0.2, 'circle-stroke-color': accent, 'circle-stroke-width': 1.5, 'circle-stroke-opacity': 0.5, 'circle-pitch-alignment': 'viewport' } });
     if (map.hasImage('arrow')) map.removeImage('arrow');
     map.addImage('arrow', arrowIcon(), { pixelRatio: 2 });
     map.addLayer({ id: 'train-arrows', type: 'symbol', source: 'train-marks', filter: ['==', ['get', 'kind'], 'arrow'],
@@ -658,17 +658,18 @@
       if (dark.matches) map.getSource('headlights')?.setData({ type: 'FeatureCollection', features: headlights });
     }
     // pulses: trains (fade away at street zoom, where the 3D train is big enough) and hot crossings
-    const tp = (Date.now() % 2200) / 2200, ease = 1 - (1 - tp) ** 2;
+    // slow, short, soft: ease out as the ring grows, fade out fully well before it restarts
+    const tp = (Date.now() % 3200) / 3200, ease = 1 - (1 - tp) ** 3, tf = (1 - tp) ** 2;
     if (map.getLayer('train-pulse')) {
-      map.setPaintProperty('train-pulse', 'circle-radius', 10 + 30 * ease);
-      map.setPaintProperty('train-pulse', 'circle-opacity', ['interpolate', ['linear'], ['zoom'], 15, 0.3 * (1 - tp), 16.5, 0]);
-      map.setPaintProperty('train-pulse', 'circle-stroke-opacity', ['interpolate', ['linear'], ['zoom'], 15, 0.9 * (1 - tp), 16.5, 0]);
+      map.setPaintProperty('train-pulse', 'circle-radius', 10 + 14 * ease);
+      map.setPaintProperty('train-pulse', 'circle-opacity', ['interpolate', ['linear'], ['zoom'], 15, 0.15 * tf, 16.5, 0]);
+      map.setPaintProperty('train-pulse', 'circle-stroke-opacity', ['interpolate', ['linear'], ['zoom'], 15, 0.5 * tf, 16.5, 0]);
     }
-    const cp = (Date.now() % 1600) / 1600, cease = 1 - (1 - cp) ** 2;
+    const cp = (Date.now() % 2800) / 2800, cease = 1 - (1 - cp) ** 3, cf = (1 - cp) ** 2;
     if (map.getLayer('crossing-pulse')) {
-      map.setPaintProperty('crossing-pulse', 'circle-radius', 5 + 20 * cease);
-      map.setPaintProperty('crossing-pulse', 'circle-opacity', 0.3 * (1 - cp));
-      map.setPaintProperty('crossing-pulse', 'circle-stroke-opacity', 0.9 * (1 - cp));
+      map.setPaintProperty('crossing-pulse', 'circle-radius', 5 + 9 * cease);
+      map.setPaintProperty('crossing-pulse', 'circle-opacity', 0.15 * cf);
+      map.setPaintProperty('crossing-pulse', 'circle-stroke-opacity', 0.5 * cf);
     }
     const pulse = 10 + 8 * ((Date.now() % 2000) / 2000);
     if (map.getLayer('me-pulse')) { map.setPaintProperty('me-pulse', 'circle-radius', pulse); map.setPaintProperty('me-pulse', 'circle-opacity', 0.3 * (1 - (pulse - 10) / 8)); }

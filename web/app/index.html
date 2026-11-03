@@ -228,7 +228,7 @@
       if (shown[trip.id] != null && dist < shown[trip.id]) dist = shown[trip.id]; // hold, never reverse
       shown[trip.id] = dist;
       const p = pointAt(trip.shape, dist);
-      out.push({ trip, ...p, live: isLive, at: pos.at, next: pos.next });
+      out.push({ trip, ...p, dist, live: isLive, at: pos.at, next: pos.next });
     }
     return { trains: out, w, age };
   }
@@ -247,44 +247,9 @@
   map.touchZoomRotate.enableRotation();
   dark.addEventListener('change', () => map.setStyle(styleUrl()));
 
-  function trainIcon() {
-    const s = 64, c = document.createElement('canvas'); c.width = c.height = s;
-    const g = c.getContext('2d');
-    const css = getComputedStyle(document.documentElement);
-    g.translate(s / 2, s / 2);
-    g.fillStyle = css.getPropertyValue('--train').trim();
-    g.strokeStyle = dark.matches ? '#0f1411' : '#ffffff'; g.lineWidth = 5; g.lineJoin = 'round';
-    g.beginPath(); g.moveTo(0, -24); g.lineTo(16, 18); g.lineTo(0, 9); g.lineTo(-16, 18); g.closePath();
-    g.stroke(); g.fill();
-    return { width: s, height: s, data: g.getImageData(0, 0, s, s).data };
-  }
-
-  // US railroad crossbuck: two white boards in an X with a dark outline
-  function crossbuckIcon() {
-    const s = 64, c = document.createElement('canvas'); c.width = c.height = s;
-    const g = c.getContext('2d');
-    g.translate(s / 2, s / 2);
-    for (const a of [Math.PI / 4, -Math.PI / 4]) {
-      g.save(); g.rotate(a);
-      g.fillStyle = '#1c241e'; g.fillRect(-29, -7, 58, 14);
-      g.restore();
-    }
-    for (const a of [Math.PI / 4, -Math.PI / 4]) {
-      g.save(); g.rotate(a);
-      g.fillStyle = '#ffffff'; g.fillRect(-26, -4.5, 52, 9);
-      g.restore();
-    }
-    return { width: s, height: s, data: g.getImageData(0, 0, s, s).data };
-  }
-
   function addAppLayers() {
     const css = getComputedStyle(document.documentElement);
     const accent = css.getPropertyValue('--accent').trim();
-    if (map.hasImage('train')) map.removeImage('train');
-    map.addImage('train', trainIcon(), { pixelRatio: 2 });
-    if (map.hasImage('crossbuck')) map.removeImage('crossbuck');
-    map.addImage('crossbuck', crossbuckIcon(), { pixelRatio: 2 });
-
     // gentle 3D buildings when zoomed in
     map.addLayer({ id: 'buildings-3d', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14,
       paint: { 'fill-extrusion-color': dark.matches ? '#2a332d' : '#dfe3dd',
@@ -313,19 +278,23 @@
     map.addLayer({ id: 'heat', type: 'line', source: 'heat', layout: { 'line-cap': 'butt', 'line-join': 'round' },
       paint: { 'line-color': ['get', 'color'], 'line-opacity': ['get', 'a'], 'line-blur': 1,
         'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3, 15, 9, 17, 16] } }, 'route-glow');
-    // crossbuck sign standing upright above each crossing
-    map.addSource('crossings', { type: 'geojson', data: crossingsFC() });
-    map.addLayer({ id: 'crossing-icons', type: 'symbol', source: 'crossings',
-      layout: { 'icon-image': 'crossbuck', 'icon-anchor': 'bottom', 'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.55, 14, 0.9],
-        'icon-pitch-alignment': 'viewport', 'icon-rotation-alignment': 'viewport',
-        // declutter: overlapping icons are hidden, the crossing nearest you wins
-        'icon-allow-overlap': false, 'symbol-sort-key': ['get', 'rank'] } });
+    // a small dot on the track at each crossing
+    // (red or yellow when that crossing is the one heating its street)
+    map.addSource('crossings', { type: 'geojson', data: crossingDotsFC() });
+    map.addLayer({ id: 'crossings', type: 'circle', source: 'crossings',
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 2, 15, 5], 'circle-color': ['coalesce', ['get', 'color'], css.getPropertyValue('--muted').trim()],
+        'circle-stroke-color': dark.matches ? '#0f1411' : '#ffffff', 'circle-stroke-width': 1.5, 'circle-pitch-alignment': 'map' } });
 
     map.addSource('trains', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addLayer({ id: 'train-halo', type: 'circle', source: 'trains', paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 12, 14, 18], 'circle-color': accent, 'circle-opacity': ['case', ['get', 'live'], 0.35, 0.12], 'circle-pitch-alignment': 'map', 'circle-blur': 0.4 } });
-    map.addLayer({ id: 'trains', type: 'symbol', source: 'trains',
-      layout: { 'icon-image': 'train', 'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.9, 14, 1.2], 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
-      paint: { 'icon-opacity': ['case', ['get', 'live'], 1, 0.55] } });
+    // headlight glow ahead of each train (dark mode only), under the 3D trains
+    map.addSource('headlights', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'headlights', type: 'circle', source: 'headlights', layout: { visibility: dark.matches ? 'visible' : 'none' },
+      paint: { 'circle-color': '#fff3c4', 'circle-opacity': 0.55, 'circle-blur': 1, 'circle-pitch-alignment': 'map',
+        'circle-radius': ['interpolate', ['exponential', 2], ['zoom'], 10, 6, 16, 22, 18, 80] } });
+    // 3D trains, lit like the 3D buildings
+    map.addLayer({ id: 'trains', type: 'fill-extrusion', source: 'trains',
+      paint: { 'fill-extrusion-color': ['get', 'color'], 'fill-extrusion-height': ['get', 'h'], 'fill-extrusion-base': ['get', 'b'],
+        'fill-extrusion-opacity': 1, 'fill-extrusion-vertical-gradient': true } });
 
     map.addSource('me', { type: 'geojson', data: { type: 'FeatureCollection', features: me ? [me] : [] } });
     map.addLayer({ id: 'me-pulse', type: 'circle', source: 'me', paint: { 'circle-radius': 10, 'circle-color': '#2f7de1', 'circle-opacity': 0.2, 'circle-pitch-alignment': 'map' } });
@@ -374,15 +343,7 @@
     }
     return null;
   }
-  function milesFromMe(c) {
-    if (!me) return 0;
-    const [lon, lat] = me.geometry.coordinates;
-    return Math.hypot((c.lon - lon) * Math.cos(lat * Math.PI / 180), c.lat - lat) * 69.1;
-  }
   function updateCrossings() {
-    let rank = 0;
-    for (const c of crossings) c.miles = milesFromMe(c);
-    for (const c of [...crossings].sort((a, b) => a.miles - b.miles)) c.rank = rank++;
     const t = nowS(), day = la(t), services = activeServices(day.ymd, day.dow), secs = t - day.midnight;
     for (const c of crossings) {
       let next = Infinity, since = Infinity; // seconds until the next train / since the last one cleared
@@ -395,13 +356,21 @@
         if (rel > -CLEAR_S) next = Math.min(next, rel);
         else since = Math.min(since, -rel - CLEAR_S);
       }
+      // Every train counts, both directions: the strongest signal wins, so when two trains pass
+      // close together the street stays red from the first until well after the second clears.
+      const residual = since < FADE_S ? 1 - since / FADE_S : 0; // traffic still backed up
       c.heat = next <= RED_S ? { color: HEAT_RED, a: 1 }
+        : residual >= 0.5 ? { color: HEAT_RED, a: residual }
         : next <= YELLOW_S ? { color: HEAT_YELLOW, a: 1 }
-        : since < FADE_S ? { color: HEAT_RED, a: 1 - since / FADE_S }
+        : residual > 0 ? { color: HEAT_RED, a: residual }
         : null;
+      c.next = next; c.since = since;
     }
     map.getSource('heat')?.setData(heatFC());
-    map.getSource('crossings')?.setData(crossingsFC());
+    map.getSource('crossings')?.setData(crossingDotsFC());
+  }
+  function crossingDotsFC() {
+    return { type: 'FeatureCollection', features: crossings.map((c) => ({ type: 'Feature', properties: { color: c.heat?.color ?? null }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } })) };
   }
   function heatFC() {
     const features = [];
@@ -411,10 +380,8 @@
     }
     return { type: 'FeatureCollection', features };
   }
-  function crossingsFC() {
-    return { type: 'FeatureCollection', features: crossings.map((c) => ({ type: 'Feature', properties: { rank: c.rank ?? 0 }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } })) };
-  }
   updateCrossings();
+  window.__smart = { crossings, updateCrossings, timeAtDist, trips: data.trips, activeServices }; // for automated checks
   setInterval(updateCrossings, 1000);
   map.on('style.load', addAppLayers);
 
@@ -483,12 +450,50 @@
   setInterval(poll, POLL_MS);
   poll();
 
+  // ---------- 3D trains ----------
+  // A SMART trainset: two Nippon Sharyo DMU cars (A + B), each ~26 m long, cab at each outer end.
+  // Each car is a rigid body resting on two trucks that sit on the track, so on curves the cars
+  // angle against each other like real ones. Length is true to scale from zoom 16 in (below that
+  // the train grows so it stays the same size on screen); width and height are drawn 1.8x so the
+  // cars read at phone size. In dark mode the windows are lit and the headlights glow.
+  const CAR_M = 26, GAP_M = 1, WIDTH_M = 3, TRUCK_M = 4, NOSE_M = 2.5, CARS = 2, CHUNK = 1.8;
+  // livery bands, bottom to top: [base m, top m, color, dark-mode color]
+  const BANDS = [[0.6, 1.7, '#2f7a3e', '#2f7a3e'], [1.7, 2.3, '#c3c8cb', '#a9afb3'], [2.3, 3.2, '#2a3238', '#ffd98a'], [3.2, 4.2, '#c3c8cb', '#a9afb3']];
+  let headlights = [];
+  function trainFeatures(trains) {
+    const k = Math.max(1, 2 ** (16 - map.getZoom())), kw = k * CHUNK, feats = [];
+    headlights = [];
+    for (const x of trains) {
+      for (let i = 0; i < CARS; i++) {
+        const dF = x.dist - i * (CAR_M + GAP_M) * k, dR = dF - CAR_M * k;
+        const a = pointAt(x.trip.shape, dF - TRUCK_M * k), b = pointAt(x.trip.shape, dR + TRUCK_M * k); // front and rear trucks
+        const ky = 110540, kx = 111320 * Math.cos(a.lat * Math.PI / 180);
+        let ux = (a.lon - b.lon) * kx, uy = (a.lat - b.lat) * ky;
+        const len = Math.hypot(ux, uy) || 1; ux /= len; uy /= len;
+        const px = uy, py = -ux, over = TRUCK_M * k, hw = WIDTH_M / 2 * kw, nose = NOSE_M * k, pinch = 0.55 * hw;
+        const at = (o, along, side) => [o.lon + (ux * along + px * side) / kx, o.lat + (uy * along + py * side) / ky];
+        const ring = [];
+        if (i === CARS - 1) ring.push(at(b, nose - over, -hw), at(b, -over, -pinch), at(b, -over, pinch), at(b, nose - over, hw)); // rear cab
+        else ring.push(at(b, -over, -hw), at(b, -over, hw));
+        if (i === 0) {
+          ring.push(at(a, over - nose, hw), at(a, over, pinch), at(a, over, -pinch), at(a, over - nose, -hw)); // front cab
+          headlights.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: at(a, over + 6 * k, 0) } });
+        }
+        else ring.push(at(a, over, hw), at(a, over, -hw));
+        ring.push(ring[0]);
+        for (const [base, top, light, darkColor] of BANDS) feats.push({ type: 'Feature', properties: { color: dark.matches ? darkColor : light, b: base * kw, h: top * kw }, geometry: { type: 'Polygon', coordinates: [ring] } });
+      }
+    }
+    return feats;
+  }
+
   // ---------- frame loop ----------
   function frame() {
     const { trains, w } = trainsAt(nowS());
     lastW = w;
     const src = map.getSource('trains');
-    if (src) src.setData({ type: 'FeatureCollection', features: trains.map((x) => ({ type: 'Feature', properties: { trip: x.trip.id, bearing: x.bearing, live: x.live }, geometry: { type: 'Point', coordinates: [x.lon, x.lat] } })) });
+    if (src) src.setData({ type: 'FeatureCollection', features: trainFeatures(trains) });
+    if (dark.matches) map.getSource('headlights')?.setData({ type: 'FeatureCollection', features: headlights });
     const pulse = 10 + 8 * ((Date.now() % 2000) / 2000);
     if (map.getLayer('me-pulse')) { map.setPaintProperty('me-pulse', 'circle-radius', pulse); map.setPaintProperty('me-pulse', 'circle-opacity', 0.3 * (1 - (pulse - 10) / 8)); }
     requestAnimationFrame(frame);

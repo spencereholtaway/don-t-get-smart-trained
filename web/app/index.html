@@ -335,31 +335,15 @@
   let me = null;
 
   // ---------- level crossings ----------
-  // OpenStreetMap level crossings, served (and cached) by the Worker. Keep the ones on the
-  // SMART track and note how far along each direction's track they are.
-  const API_BASE = LIVE_URL.replace(/\/realtime$/, '');
+  // Level crossings (roads crossing the track at grade), saved in data.json by
+  // scripts/build-crossings.mjs. Note how far along each direction's track they are.
   const NEAR_MILES = 5, SOON_S = 10 * 60, GATE_LEAD_S = 30;
-  let crossings = [], lastW = 0;
-  async function loadCrossings() {
-    while (!crossings.length) { // keep trying until the Worker has them
-      try {
-        const r = await fetch(`${API_BASE}/crossings`);
-        if (r.ok) {
-          const { crossings: raw } = await r.json();
-          crossings = raw.map((c) => {
-            const d = {};
-            let onTrack = false;
-            for (const id of Object.keys(shapes)) { const p = projectOnShape(id, c.lon, c.lat); d[id] = p.d; if (p.meters < 25) onTrack = true; }
-            return onTrack ? { ...c, d, label: '', soon: false } : null;
-          }).filter(Boolean);
-          updateCrossings();
-          if (refitWhenCrossingsLoad) { refitWhenCrossingsLoad = false; fitMeAndNearest(); }
-          return;
-        }
-      } catch {}
-      await new Promise((r) => setTimeout(r, 30000));
-    }
-  }
+  let lastW = 0;
+  const crossings = (data.crossings ?? []).map((c) => {
+    const d = {};
+    for (const id of Object.keys(shapes)) d[id] = projectOnShape(id, c.lon, c.lat).d;
+    return { ...c, d, label: '', soon: false };
+  });
   // When does the train on this timeline reach distance dc? Seconds since service-day midnight.
   function timeAtDist(stops, dc) {
     for (let i = 0; i < stops.length - 1; i++) {
@@ -393,7 +377,7 @@
   function crossingsFC() {
     return { type: 'FeatureCollection', features: crossings.map((c) => ({ type: 'Feature', properties: { soon: c.soon, label: c.label }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } })) };
   }
-  loadCrossings();
+  updateCrossings();
   setInterval(updateCrossings, 2000);
   map.on('style.load', addAppLayers);
 
@@ -418,7 +402,7 @@
       const { longitude: lon, latitude: lat } = pos.coords;
       me = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} };
       map.getSource('me')?.setData({ type: 'FeatureCollection', features: [me] });
-      if (fly && !refine) { fitMeAndNearest(); if (!crossings.length) refitWhenCrossingsLoad = true; }
+      if (fly && !refine) fitMeAndNearest();
     };
     const fail = (err) => setLocState('error', err.code === 1 ? 'Location is blocked for this site' : 'Couldn’t find your location. Tap to try again');
     // Fast, low-accuracy fix first (works on Macs without GPS); a high-accuracy fix refines it on phones.
@@ -427,8 +411,7 @@
       navigator.geolocation.getCurrentPosition((p2) => onPos(p2, true), () => {}, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
     }, fail, { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 });
   }
-  // Frame you and the nearest level crossing (nearest station until crossings have loaded).
-  let refitWhenCrossingsLoad = false;
+  // Frame you and the nearest level crossing.
   function fitMeAndNearest() {
     if (!me) return;
     const [lon, lat] = me.geometry.coordinates;

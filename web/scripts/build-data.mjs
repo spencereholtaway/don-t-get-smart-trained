@@ -77,7 +77,9 @@ const sa = newest('servicealerts');
 
 const realtime = { ...shapeTripUpdates(tu), ...shapeVehicles(vp), ...shapeAlerts(sa) };
 
-const data = { builtAt: new Date().toISOString(), timezone: 'America/Los_Angeles', routeColor: '#4d6d51', stations, shapes, trips, calendar, exceptions, realtime };
+// Keep crossings from scripts/build-crossings.mjs.
+const previous = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, 'utf8')) : {};
+const data = { crossings: previous.crossings, crossingsSource: previous.crossingsSource, builtAt: new Date().toISOString(), timezone: 'America/Los_Angeles', routeColor: '#4d6d51', stations, shapes, trips, calendar, exceptions, realtime };
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, JSON.stringify(data));
 console.log(`Wrote ${OUT}: ${(fs.statSync(OUT).size / 1024).toFixed(0)} KB, ${stations.length} stations, ${trips.length} trips, ${realtime.tripUpdates.length} trip updates, ${realtime.vehicles.length} trains with GPS, ${realtime.alerts.length} alerts.`);

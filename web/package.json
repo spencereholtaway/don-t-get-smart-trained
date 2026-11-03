@@ -4,9 +4,12 @@
   "type": "module",
   "scripts": {
     "capture": "node scripts/capture.mjs",
-    "usage": "node scripts/usage.mjs"
+    "usage": "node scripts/usage.mjs",
+    "crossings": "node scripts/build-crossings.mjs"
   },
   "dependencies": {
-    "gtfs-realtime-bindings": "^1.1.1"
+    "@mapbox/vector-tile": "^2.0.5",
+    "gtfs-realtime-bindings": "^1.1.1",
+    "pbf": "^4.0.2"
   }
 }

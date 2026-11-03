@@ -23,18 +23,11 @@ const json = (body, extra = {}) => new Response(JSON.stringify(body), {
 });
 
 export default {
-  // Every few minutes, make sure crossings are stored (no 511 requests here).
-  async scheduled(event, env) {
-    const stub = env.FEEDS.get(env.FEEDS.idFromName('smart'));
-    const res = await stub.fetch(new Request('https://do/crossings'));
-    console.log(`cron crossings: ${res.status}`);
-  },
-
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
     if (request.method !== 'GET') return new Response('Method not allowed', { status: 405, headers: CORS });
     const { pathname } = new URL(request.url);
-    if (pathname === '/realtime' || pathname === '/usage' || pathname === '/crossings') {
+    if (pathname === '/realtime' || pathname === '/usage') {
       const stub = env.FEEDS.get(env.FEEDS.idFromName('smart'));
       return stub.fetch(new Request(`https://do${pathname}`));
     }
@@ -53,7 +46,6 @@ export class Feeds {
   async fetch(request) {
     const { pathname } = new URL(request.url);
     if (pathname === '/usage') return json(await this.usage());
-    if (pathname === '/crossings') return this.crossings();
     // One refresh at a time; concurrent callers share it.
     this.inflight ??= this.refresh().finally(() => { this.inflight = null; });
     await this.inflight;
@@ -62,53 +54,6 @@ export class Feeds {
     out.fetchedAt = Object.fromEntries(await Promise.all(Object.keys(FEEDS).map(async (n) => [n, (await this.ctx.storage.get(`feed:${n}`))?.at ?? null])));
     out.servedAt = Date.now();
     return json(out);
-  }
-
-  // Road level crossings near the SMART line, from OpenStreetMap. Fetched once and kept;
-  // a failed fetch is retried at most every 10 minutes. The page keeps only the ones on the track.
-  async crossings() {
-    let c = await this.ctx.storage.get('crossings');
-    if (!c) {
-      const lastTry = (await this.ctx.storage.get('crossingsTriedAt')) ?? 0;
-      if (Date.now() - lastTry > 60_000) {
-        await this.ctx.storage.put('crossingsTriedAt', Date.now());
-        this.crossingsInflight ??= this.fetchCrossings().finally(() => { this.crossingsInflight = null; });
-        c = await this.crossingsInflight;
-      }
-    }
-    if (!c) return json({ error: 'crossings not available yet' }, { status: 503 });
-    return new Response(JSON.stringify(c), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=3600', ...CORS } });
-  }
-
-  async fetchCrossings() {
-    // Bounding box of the SMART line (south, west, north, east), padded slightly.
-    const query = '[out:json][timeout:60];node["railway"="level_crossing"](37.94,-122.83,38.56,-122.50);out body;';
-    const servers = this.env.UPSTREAM_OVERPASS ? [this.env.UPSTREAM_OVERPASS] : [
-      'https://overpass-api.de/api/interpreter',
-      'https://overpass.private.coffee/api/interpreter',
-      'https://overpass.kumi.systems/api/interpreter',
-      'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-    ];
-    for (const url of servers) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json', 'user-agent': 'smart-trains-worker/1.0 (SMART train crossing map prototype)' },
-          body: 'data=' + encodeURIComponent(query),
-        });
-        if (!res.ok) { console.log(`overpass ${url} -> ${res.status}`); continue; }
-        const osm = await res.json();
-        const crossings = (osm.elements ?? []).filter((e) => e.type === 'node').map((e) => ({ id: e.id, lat: e.lat, lon: e.lon, name: e.tags?.name ?? null }));
-        if (!crossings.length) { console.log(`overpass ${url} -> 0 crossings`); continue; }
-        const c = { fetchedAt: Date.now(), source: 'OpenStreetMap contributors (ODbL)', crossings };
-        await this.ctx.storage.put('crossings', c);
-        console.log(`overpass ${url} -> stored ${crossings.length} crossings`);
-        return c;
-      } catch (err) {
-        console.log(`overpass ${url} failed: ${err?.message ?? err}`);
-      }
-    }
-    return null;
   }
 
   async log() { return (await this.ctx.storage.get('log')) ?? []; }

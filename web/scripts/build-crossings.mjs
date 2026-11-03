@@ -11,6 +11,7 @@ const DATA = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../app/
 const data = JSON.parse(fs.readFileSync(DATA, 'utf8'));
 const Z = 14;
 const ROADS = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor']);
+const ARM_M = 250; // how far along the street, each way from the crossing, to keep for the traffic heat
 
 const tileOf = (lon, lat) => {
   const n = 2 ** Z, r = (lat * Math.PI) / 180;
@@ -36,6 +37,21 @@ const LAT0 = 38.2, KX = 111320 * Math.cos((LAT0 * Math.PI) / 180), KY = 110540;
 const xy = ([lon, lat]) => [lon * KX, lat * KY];
 const lonlat = ([x, y]) => [x / KX, y / KY];
 
+function lines(geom) {
+  const ls = geom.type === 'LineString' ? [geom.coordinates] : geom.type === 'MultiLineString' ? geom.coordinates : [];
+  return ls.map((l) => l.map(xy));
+}
+// Walk from the hit point along the road line (from segment i) up to ARM_M, in one direction.
+function walk(line, i, hit, dir) {
+  const out = [hit];
+  let len = 0, prev = hit, j = dir > 0 ? i + 1 : i;
+  while (j >= 0 && j < line.length) {
+    const p = line[j], d = Math.hypot(p[0] - prev[0], p[1] - prev[1]);
+    if (len + d >= ARM_M) { const f = (ARM_M - len) / d; out.push([prev[0] + (p[0] - prev[0]) * f, prev[1] + (p[1] - prev[1]) * f]); len = ARM_M; break; }
+    out.push(p); len += d; prev = p; j += dir;
+  }
+  return { pts: out, len };
+}
 function segs(geom) {
   const lines = geom.type === 'LineString' ? [geom.coordinates] : geom.type === 'MultiLineString' ? geom.coordinates : [];
   const out = [];
@@ -75,27 +91,37 @@ for (let i = 0; i < list.length; i += 8) {
       if (p.brunnel) continue; // bridges and tunnels don't block traffic
       const g = feat.toGeoJSON(x, y, Z).geometry;
       if (p.class === 'rail') rails.push(...segs(g));
-      else if (ROADS.has(p.class) && p.ramp !== 1) roads.push({ cls: p.class, segs: segs(g) });
+      else if (ROADS.has(p.class) && p.ramp !== 1) roads.push({ cls: p.class, lines: lines(g) });
     }
-    for (const rs of rails) for (const road of roads) for (const s of road.segs) {
-      const hit = intersect(rs, s);
-      if (hit && distToShape(hit) < 30) found.push({ pt: hit, road: road.cls });
+    for (const rs of rails) for (const road of roads) for (const line of road.lines) for (let k = 0; k < line.length - 1; k++) {
+      const hit = intersect(rs, [line[k], line[k + 1]]);
+      if (hit && distToShape(hit) < 30) found.push({ pt: hit, road: road.cls, arms: [walk(line, k, hit, 1), walk(line, k, hit, -1)].filter((a) => a.len > 5) });
     }
   }));
 }
 
 // The same crossing shows up in neighboring tiles and on parallel tracks: merge within 40 m.
+// Arms from duplicates are merged: per direction (bearing within 30 degrees), keep the longest
+// (a tile edge can cut a street short in one tile but not the next).
 const crossings = [];
+const bearingOf = (a) => { const [p, q] = [a.pts[0], a.pts[Math.min(a.pts.length - 1, 1)]]; return Math.atan2(q[0] - p[0], q[1] - p[1]); };
 for (const f of found) {
-  if (crossings.some((c) => Math.hypot(c.pt[0] - f.pt[0], c.pt[1] - f.pt[1]) < 40)) continue;
-  crossings.push(f);
+  const c = crossings.find((c) => Math.hypot(c.pt[0] - f.pt[0], c.pt[1] - f.pt[1]) < 40);
+  if (!c) { crossings.push({ ...f, arms: [...f.arms] }); continue; }
+  for (const a of f.arms) {
+    const same = c.arms.findIndex((b) => { const d = Math.abs(bearingOf(a) - bearingOf(b)) % (2 * Math.PI); return Math.min(d, 2 * Math.PI - d) < Math.PI / 6; });
+    if (same < 0) c.arms.push(a);
+    else if (a.len > c.arms[same].len) c.arms[same] = a;
+  }
 }
+const r5 = (n) => Math.round(n * 1e5) / 1e5;
 data.crossings = crossings.map((c, i) => {
   const [lon, lat] = lonlat(c.pt);
-  return { id: i + 1, lat: Math.round(lat * 1e5) / 1e5, lon: Math.round(lon * 1e5) / 1e5, road: c.road };
+  // arms: street lines leading away from the crossing, [lon, lat] points starting at the crossing
+  return { id: i + 1, lat: r5(lat), lon: r5(lon), road: c.road, arms: c.arms.map((a) => a.pts.map((p) => lonlat(p).map(r5))) };
 }).sort((a, b) => b.lat - a.lat);
 data.crossingsSource = `OpenStreetMap via OpenFreeMap tiles (${template.split('/')[4]}), roads crossing rail at grade`;
 fs.writeFileSync(DATA, JSON.stringify(data));
 const byClass = {};
 for (const c of data.crossings) byClass[c.road] = (byClass[c.road] ?? 0) + 1;
-console.log(`${data.crossings.length} crossings`, byClass);
+console.log(`${data.crossings.length} crossings`, byClass, `arms per crossing: ${(data.crossings.reduce((n, c) => n + c.arms.length, 0) / data.crossings.length).toFixed(1)}`);

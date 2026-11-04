@@ -261,12 +261,18 @@
   const bounds = routeCoords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(routeCoords[0], routeCoords[0]));
 
   const VIEW_PITCH = 45; // default tilt
+  // Zoomed out, each train is a big arrow on the route pointing the way it's going; from
+  // TRAINS_Z in, it's the 3D train (the two cross-fade over the half zoom level before).
+  const TRAINS_Z = 14, POINTERS_Z = TRAINS_Z - 0.5;
   const map = new maplibregl.Map({
     container: 'map', style: styleUrl(), bounds, fitBoundsOptions: { padding: { top: 40, bottom: 40, left: 30, right: 30 } },
     pitch: VIEW_PITCH, maxPitch: 70, minZoom: 7, attributionControl: { compact: true }, dragRotate: true, touchPitch: true,
   });
   map.touchZoomRotate.enableRotation();
-  dark.addEventListener('change', () => map.setStyle(styleUrl()));
+  // diff: false rebuilds the style from scratch. The light and dark styles share their sources,
+  // so a diffed swap would delete the app's layers without firing style.load to add them back.
+  dark.addEventListener('change', () => map.setStyle(styleUrl(), { diff: false }));
+  map.on('sourcedata', (e) => { if (e.sourceId === 'trains' && e.isSourceLoaded) trainsBusy = false; });
 
   function arrowIcon() {
     const s = 40, c = document.createElement('canvas'); c.width = c.height = s;
@@ -275,6 +281,21 @@
     g.beginPath(); g.moveTo(0, -14); g.lineTo(12, 10); g.lineTo(0, 4); g.lineTo(-12, 10); g.closePath();
     g.lineJoin = 'round'; g.lineWidth = 4; g.strokeStyle = dark.matches ? '#0f1411' : '#ffffff'; g.stroke();
     g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(); g.fill();
+    return { width: s, height: s, data: g.getImageData(0, 0, s, s).data };
+  }
+
+  // train pointer for zoomed-out views: a navigation arrow, upright on screen, outlined so it
+  // stands off the route line and the base map
+  function pointerIcon() {
+    const s = 72, c = document.createElement('canvas'); c.width = c.height = s;
+    const g = c.getContext('2d');
+    g.translate(s / 2, s / 2);
+    g.beginPath(); g.moveTo(0, -26); g.lineTo(20, 22); g.lineTo(0, 11); g.lineTo(-20, 22); g.closePath();
+    g.lineJoin = 'round';
+    g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 6; g.shadowOffsetY = 2;
+    g.lineWidth = 7; g.strokeStyle = dark.matches ? '#0f1411' : '#ffffff'; g.stroke();
+    g.shadowColor = 'transparent';
+    g.fillStyle = dark.matches ? '#8fbf8f' : '#2f7a3e'; g.fill();
     return { width: s, height: s, data: g.getImageData(0, 0, s, s).data };
   }
 
@@ -327,14 +348,13 @@
 
     // trains change every frame: shallow tiling keeps each update cheap
     map.addSource('trains', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, maxzoom: 15, tolerance: 0, buffer: 32 });
-    map.on('sourcedata', (e) => { if (e.sourceId === 'trains' && e.isSourceLoaded) trainsBusy = false; });
     // direction arrow, for when you're zoomed out (it fades away at street zoom)
     map.addSource('train-marks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, maxzoom: 14 });
     if (map.hasImage('arrow')) map.removeImage('arrow');
     map.addImage('arrow', arrowIcon(), { pixelRatio: 2 });
     map.addLayer({ id: 'train-arrows', type: 'symbol', source: 'train-marks', filter: ['==', ['get', 'kind'], 'arrow'],
       layout: { 'icon-image': 'arrow', 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
-      paint: { 'icon-opacity': ['interpolate', ['linear'], ['zoom'], 14.5, 1, 16, 0] } });
+      paint: { 'icon-opacity': ['interpolate', ['linear'], ['zoom'], POINTERS_Z, 0, TRAINS_Z, 1, 14.5, 1, 16, 0] } });
     // headlight glow ahead of each train (dark mode only), under the 3D trains
     map.addSource('headlights', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'headlights', type: 'circle', source: 'headlights', layout: { visibility: dark.matches ? 'visible' : 'none' },
@@ -343,7 +363,14 @@
     // 3D trains, lit like the 3D buildings
     map.addLayer({ id: 'trains', type: 'fill-extrusion', source: 'trains',
       paint: { 'fill-extrusion-color': ['get', 'color'], 'fill-extrusion-height': ['get', 'h'], 'fill-extrusion-base': ['get', 'b'],
-        'fill-extrusion-opacity': 1, 'fill-extrusion-vertical-gradient': true } });
+        'fill-extrusion-opacity': ['interpolate', ['linear'], ['zoom'], POINTERS_Z, 0, TRAINS_Z, 1], 'fill-extrusion-vertical-gradient': true } });
+    // zoomed-out train pointers, on top of everything on the track
+    if (map.hasImage('pointer')) map.removeImage('pointer');
+    map.addImage('pointer', pointerIcon(), { pixelRatio: 2 });
+    map.addLayer({ id: 'train-pointers', type: 'symbol', source: 'train-marks', filter: ['==', ['get', 'kind'], 'pointer'],
+      layout: { 'icon-image': 'pointer', 'icon-rotate': ['get', 'angle'], 'icon-rotation-alignment': 'viewport', 'icon-pitch-alignment': 'viewport',
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.75, 11, 1], 'icon-allow-overlap': true, 'icon-ignore-placement': true },
+      paint: { 'icon-opacity': ['interpolate', ['linear'], ['zoom'], POINTERS_Z, 1, TRAINS_Z, 0] } });
 
     map.addSource('me', { type: 'geojson', data: { type: 'FeatureCollection', features: me ? [me] : [] } });
     map.addLayer({ id: 'me-pulse', type: 'circle', source: 'me', paint: { 'circle-radius': 10, 'circle-color': '#2f7de1', 'circle-opacity': 0.2, 'circle-pitch-alignment': 'map' } });
@@ -609,6 +636,17 @@
     const C = { green: '#2f7a3e', body: D ? '#a9afb3' : '#cdd2d5', glass: D ? '#ffd98a' : '#252c32', windshield: D ? '#3a4248' : '#1b2126',
       door: D ? '#7a8287' : '#8a9399', under: '#2b2f31', equip: D ? '#80878b' : '#a3aaae', head: '#fff4c0', tail: '#d0352c' };
     headlights = []; marks = [];
+    const z = map.getZoom();
+    if (z < TRAINS_Z) {
+      for (const x of trains) {
+        // the track's direction here as it appears on screen (tilt and rotation included)
+        const a0 = pointAt(x.trip.shape, x.dist - 6 * k), a1 = pointAt(x.trip.shape, x.dist + 6 * k);
+        const p0 = map.project([a0.lon, a0.lat]), p1 = map.project([a1.lon, a1.lat]);
+        const angle = p0.x === p1.x && p0.y === p1.y ? x.bearing - map.getBearing() : Math.atan2(p1.x - p0.x, p0.y - p1.y) * 180 / Math.PI;
+        marks.push({ type: 'Feature', properties: { kind: 'pointer', angle }, geometry: { type: 'Point', coordinates: [x.lon, x.lat] } });
+      }
+    }
+    if (z < POINTERS_Z) return feats; // no 3D trains this far out
     for (const x of trains) {
       for (let i = 0; i < CARS; i++) {
         const dF = x.dist - i * (CAR_M + GAP_M) * k, dR = dF - CAR_M * k;

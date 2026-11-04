@@ -23,6 +23,16 @@
   .back { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); text-decoration: none; font-weight: 600; padding: 6px 0; }
   .back svg { width: 18px; height: 18px; }
   .coffee { margin: 20px 0; }
+  /* A plain link in Buy Me a Coffee's colours, rather than their widget script: it works
+     without third-party JavaScript, fits any width and responds to taps straight away. */
+  .bmc { display: flex; align-items: center; justify-content: center; gap: 10px; box-sizing: border-box;
+    width: 100%; max-width: 340px; min-height: 52px; padding: 12px 20px; border: 1px solid #000; border-radius: 12px;
+    background: #FFDD00; color: #000; font: 600 17px/1.2 var(--font); text-decoration: none; text-align: center;
+    -webkit-tap-highlight-color: transparent; transition: transform .1s ease, box-shadow .1s ease; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  .bmc:hover { box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+  .bmc:active { transform: scale(.97); }
+  .bmc:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .bmc span[aria-hidden] { font-size: 22px; }
   .credits { list-style: none; padding: 0; margin: 0; }
   .credits li { padding: 10px 0; border-top: 1px solid var(--line); }
   a { color: var(--accent); }
@@ -35,7 +45,7 @@
     Map
   </a>
   <div class="coffee">
-    <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="holtaway" data-color="#FFDD00" data-emoji="☕"  data-font="Arial" data-text="Like this? Buy me a coffee!" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff" ></script>
+    <a class="bmc" href="https://www.buymeacoffee.com/holtaway" target="_blank" rel="noopener"><span aria-hidden="true">☕</span>Like this? Buy me a coffee!</a>
   </div>
 
   <ul class="credits">

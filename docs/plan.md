@@ -9,7 +9,11 @@ Read `docs/decisions.md` first. It explains why the web version is throwaway and
   - The map shows live trains, stations and your location, with no crossings or traffic.
   - A card at the bottom shows your nearest station: its name, then Northbound, then Southbound. Each direction shows the next train big (minutes away, or a clock time past an hour, live or scheduled, and how late), its destination, and the two scheduled trains after it. At the ends of the line the card shows only the direction you can go: Windsor has no Northbound row, Larkspur no Southbound row.
   - Tap a station on the map to see its trains instead. Tap elsewhere to go back to the nearest one.
-  - **Location:** the quick first fix can be coarse (Wi-Fi, IP or cached) and land miles off. When the precise fix arrives more than 300 m away, the map frames again, unless you've moved it yourself.
+  - **Location and the camera:** the camera moves once per locate, not once per fix.
+    - A fix less accurate than 1.5 km (an IP-based guess, which a Mac without GPS often gives, e.g. Portola) never moves the map.
+    - The precise fix re-frames only if it lands more than 300 m from where the map framed, and only if you haven't moved or tapped the map, the card or a tab since.
+    - More than 30 miles from every station, the map shows the whole line (not a view stretched to include you), and the card asks you to tap a station.
+  - **Rider zoom** stops at 13.5, where trains are still the big arrows. Closer in they become small 3D models that are hard to read.
   - **Default framing:** you, your nearest station, and the next northbound and southbound trains to reach it (if they're already on the line), all fitted above the card and map buttons in the 45° tilted view.
   - Tap the Northbound or Southbound row to frame just the station and that direction's next train (or, if it hasn't set off yet, the stop it leaves from). Every other train dims so you can tell which one it is. The other row fades back. Tap the row again, or anywhere on the map, to go back to both trains.
 - **Driver use case:** before driving, check whether a SMART train is about to block the road crossings near you, so you don't get stuck at a lowered gate.

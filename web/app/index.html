@@ -404,9 +404,15 @@
     map.addSource('train-marks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, maxzoom: 14 });
     if (map.hasImage('arrow')) map.removeImage('arrow');
     map.addImage('arrow', arrowIcon(), { pixelRatio: 2 });
-    map.addLayer({ id: 'train-arrows', type: 'symbol', source: 'train-marks', filter: ['==', ['get', 'kind'], 'arrow'],
-      layout: { 'icon-image': 'arrow', 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
-      paint: { 'icon-opacity': ['interpolate', ['linear'], ['zoom'], POINTERS_Z, 0, TRAINS_Z, ['case', ['get', 'dim'], 0.25, 1], 14.5, ['case', ['get', 'dim'], 0.25, 1], 16, 0] } });
+    // Dimmed and normal trains are separate layers: an opacity mixing zoom with a per-train value
+    // is only worked out at whole zoom levels and blended between, which half-faded every train.
+    for (const dim of [false, true]) {
+      const a = dim ? 0.25 : 1;
+      map.addLayer({ id: dim ? 'train-arrows-dim' : 'train-arrows', type: 'symbol', source: 'train-marks',
+        filter: ['all', ['==', ['get', 'kind'], 'arrow'], ['==', ['get', 'dim'], dim]],
+        layout: { 'icon-image': 'arrow', 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
+        paint: { 'icon-opacity': ['interpolate', ['linear'], ['zoom'], POINTERS_Z, 0, TRAINS_Z, a, 14.5, a, 16, 0] } });
+    }
     // headlight glow ahead of each train (dark mode only), under the 3D trains
     map.addSource('headlights', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'headlights', type: 'circle', source: 'headlights', layout: { visibility: dark.matches ? 'visible' : 'none' },
@@ -419,10 +425,13 @@
     // zoomed-out train pointers, on top of everything on the track
     if (map.hasImage('pointer')) map.removeImage('pointer');
     map.addImage('pointer', pointerIcon(), { pixelRatio: 2 });
-    map.addLayer({ id: 'train-pointers', type: 'symbol', source: 'train-marks', filter: ['==', ['get', 'kind'], 'pointer'],
-      layout: { 'icon-image': 'pointer', 'icon-rotate': ['get', 'angle'], 'icon-rotation-alignment': 'viewport', 'icon-pitch-alignment': 'viewport',
-        'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.75, 11, 1], 'icon-allow-overlap': true, 'icon-ignore-placement': true },
-      paint: { 'icon-opacity': ['interpolate', ['linear'], ['zoom'], POINTERS_Z, ['case', ['get', 'dim'], 0.25, 1], TRAINS_Z, 0] } });
+    for (const dim of [true, false]) { // the picked train's pointer on top
+      map.addLayer({ id: dim ? 'train-pointers-dim' : 'train-pointers', type: 'symbol', source: 'train-marks',
+        filter: ['all', ['==', ['get', 'kind'], 'pointer'], ['==', ['get', 'dim'], dim]],
+        layout: { 'icon-image': 'pointer', 'icon-rotate': ['get', 'angle'], 'icon-rotation-alignment': 'viewport', 'icon-pitch-alignment': 'viewport',
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.75, 11, 1], 'icon-allow-overlap': true, 'icon-ignore-placement': true },
+        paint: { 'icon-opacity': ['interpolate', ['linear'], ['zoom'], POINTERS_Z, dim ? 0.25 : 1, TRAINS_Z, 0] } });
+    }
 
     map.addSource('me', { type: 'geojson', data: { type: 'FeatureCollection', features: me ? [me] : [] } });
     map.addLayer({ id: 'me-pulse', type: 'circle', source: 'me', paint: { 'circle-radius': 10, 'circle-color': '#2f7de1', 'circle-opacity': 0.2, 'circle-pitch-alignment': 'map' } });
@@ -572,8 +581,13 @@
     locateBtn.classList.toggle('error', state === 'error');
     locateBtn.title = locateBtn.ariaLabel = why || 'Show my location';
   }
-  let locateId = 0, framedAt = null, userMovedMap = false;
-  for (const ev of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart']) map.on(ev, (e) => { if (e.originalEvent) userMovedMap = true; });
+  // Framing on a location fix: a fix less accurate than ROUGH_M (an IP-based guess, as a Mac
+  // without GPS often gives) never moves the map. The precise fix that follows re-frames only if
+  // it lands more than 300 m from where we framed, and never once you've moved the map, tapped
+  // it or the card, or switched tabs since (userActed).
+  const ROUGH_M = 1500;
+  let locateId = 0, framedAt = null, userActed = false;
+  for (const ev of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart']) map.on(ev, (e) => { if (e.originalEvent) userActed = true; });
   function locate(fly) {
     if (!navigator.geolocation) return setLocState('error', 'This browser can’t share your location');
     const id = ++locateId; // a newer tap supersedes this request
@@ -589,12 +603,13 @@
       me = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} };
       map.getSource('me')?.setData({ type: 'FeatureCollection', features: [me] }); // if the style is still loading, addAppLayers draws `me`
       renderCard();
-      // The quick first fix can be coarse (Wi-Fi or IP based, or a cached one) and land you
-      // miles away. If the precise fix moves you more than 300 m, frame again, unless you've
-      // moved the map yourself since.
-      if (fly && !refine) { frameView(); framedAt = [lon, lat]; userMovedMap = false; }
-      else if (fly && refine && framedAt && !userMovedMap
-        && Math.hypot((lon - framedAt[0]) * 88000, (lat - framedAt[1]) * 111000) > 300) { frameView(); framedAt = [lon, lat]; }
+      if (!fly) return;
+      const precise = (pos.coords.accuracy ?? 0) <= ROUGH_M;
+      if (!refine) { userActed = false; framedAt = null; }
+      if (!precise || userActed) return;
+      if (framedAt && Math.hypot((lon - framedAt[0]) * 88000, (lat - framedAt[1]) * 111000) <= 300) return;
+      framedAt = [lon, lat];
+      frameView();
     };
     const fail = (err) => {
       if (id !== locateId || done) return;
@@ -620,7 +635,7 @@
       else { b.extend([n.s.lon, n.s.lat]); if (crossings.length) { const c = nearestCrossing(lon, lat); b.extend([c.lon, c.lat]); } }
       fitTilted(b, { top: 80, bottom: 100 + tabsEl.offsetHeight, left: 50, right: 50 }, 12.5);
     } else {
-      fitTilted(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds([lon, lat], [lon, lat])), 40);
+      fitTilted(bounds, 40); // far from the line: show the line, not a view stretched to include you
     }
   }
   // Frame the bounds as a flat view would, then tilt: same catchment, eased out a little so the
@@ -644,6 +659,7 @@
     if (mode === 'rider') {
       const hits = map.getLayer('stations') ? map.queryRenderedFeatures([[e.point.x - r, e.point.y - r], [e.point.x + r, e.point.y + r]], { layers: ['stations'] }) : [];
       const hit = hits.length ? stationsById[hits[0].properties.id] : null;
+      userActed = true;
       const hadDir = selectedDir != null;
       selectedStation = hit && hit !== selectedStation ? hit : null;
       selectedDir = null; // a tap on the map also cancels a picked direction
@@ -671,10 +687,11 @@
     if (!t) return;
     const b = new maplibregl.LngLatBounds([t.lon, t.lat], [t.lon, t.lat]);
     if (me) b.extend(me.geometry.coordinates);
-    map.fitBounds(b, { padding: { top: 110, bottom: 130, left: 70, right: 70 }, maxZoom: 16, pitch: map.getPitch(), bearing: map.getBearing(), duration: first ? 1400 : 1000 });
+    const box = map.getContainer().getBoundingClientRect(), fabsTop = document.getElementById('fabs').getBoundingClientRect().top;
+    map.fitBounds(b, { padding: { top: 110, bottom: box.bottom - fabsTop + 30, left: 70, right: 70 }, maxZoom: 16, pitch: map.getPitch(), bearing: map.getBearing(), duration: first ? 1400 : 1000 });
   }
   function setFollowing(on) { following = on; followBtn.setAttribute('aria-pressed', String(on)); if (on) { if (!me) locate(false); fitFollow(true); } }
-  followBtn.onclick = () => setFollowing(!following);
+  followBtn.onclick = () => { userActed = true; setFollowing(!following); };
   setInterval(() => { if (following && !map.isMoving()) fitFollow(false); }, 1500);
   for (const ev of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart']) map.on(ev, (e) => { if (following && e.originalEvent) setFollowing(false); });
 
@@ -687,7 +704,9 @@
   let focusTripId = null; // with a direction picked, the train it shows (others are dimmed)
   function riderStation() {
     if (selectedStation) return selectedStation;
-    return me ? nearestStation(...me.geometry.coordinates).s : null;
+    if (!me) return null;
+    const n = nearestStation(...me.geometry.coordinates);
+    return n.miles < 30 ? n.s : null; // far from the line, "nearest station" means nothing
   }
   function applyModeToMap() {
     for (const id of DRIVER_LAYERS) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', mode === 'driver' ? 'visible' : 'none');
@@ -707,7 +726,7 @@
     renderCard();
     applyModeToMap();
   }
-  for (const t of tabsEl.querySelectorAll('.tab')) t.onclick = () => { if (t.dataset.mode !== mode) { setMode(t.dataset.mode); frameView(); } };
+  for (const t of tabsEl.querySelectorAll('.tab')) t.onclick = () => { if (t.dataset.mode !== mode) { userActed = true; setMode(t.dataset.mode); frameView(); } };
 
   // Upcoming trains that stop at this station, per direction (1 = northbound, 0 = southbound),
   // today and the next two service days. Trains that end here are left out: you can't board them.
@@ -768,7 +787,7 @@
     if (mode !== 'rider') return;
     const st = riderStation();
     let html;
-    if (!st) html = '<div class="eyebrow">Next trains</div><div class="station">Find your station</div><p class="hint">Share your location, or tap a station on the map.</p>';
+    if (!st) html = `<div class="eyebrow">Next trains</div><div class="station">Find your station</div><p class="hint">${me ? 'You’re not near a SMART station. Tap one on the map.' : 'Share your location, or tap a station on the map.'}</p>`;
     else {
       const a = arrivalsAt(st.id);
       html = `<div class="eyebrow">${selectedStation ? 'Station' : 'Nearest station'}</div><div class="station">${st.name}</div>`
@@ -783,6 +802,7 @@
   // Tap a direction to frame the station and that direction's next train; tap it again
   // (or anywhere on the map) to go back to both trains.
   function pickDir(row) {
+    userActed = true;
     const d = +row.dataset.dir;
     selectedDir = selectedDir === d ? null : d;
     renderCard();
@@ -803,7 +823,7 @@
     const pts = [[st.lon, st.lat]];
     // a picked direction frames just the station and its train; otherwise you're in it too
     if (me && selectedDir == null) pts.push(me.geometry.coordinates);
-    if (me && selectedDir == null && nearestStation(...me.geometry.coordinates).miles >= 30) return fitTilted(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(pts[1], pts[1])), 40);
+    if (me && selectedDir == null && nearestStation(...me.geometry.coordinates).miles >= 30) return fitTilted(bounds, 40);
     const a = arrivalsAt(st.id);
     for (const d of selectedDir == null ? [1, 0] : [selectedDir]) {
       const n = a[d][0], tr = n && n.off === 0 && lastTrains.find((x) => x.trip.id === n.trip.id);
@@ -813,7 +833,8 @@
     }
     // clear of the map buttons and the card below them
     const box = map.getContainer().getBoundingClientRect(), top = document.getElementById('fabs').getBoundingClientRect().top;
-    fitPointsTilted(pts, { top: 70, bottom: box.bottom - top + 16, left: 40, right: 40 }, 15);
+    // no closer than POINTERS_Z, so trains show as the big arrows, not the small 3D models
+    fitPointsTilted(pts, { top: 70, bottom: box.bottom - top + 16, left: 40, right: 40 }, POINTERS_Z);
   }
   // Fit points into the padded part of the screen in the tilted view itself: try a camera,
   // measure where the points land, adjust, repeat. jumpTo is synchronous, and the camera is
@@ -823,7 +844,8 @@
     const box = { l: pad.left, r: W - pad.right, t: pad.top, b: H - pad.bottom };
     const saved = { center: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
     const b = pts.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(pts[0], pts[0]));
-    let center = b.getCenter(), zoom = maxZoom;
+    const flat = pts.length > 1 && map.cameraForBounds(b, { padding: pad, bearing: 0 });
+    let center = flat ? maplibregl.LngLat.convert(flat.center) : b.getCenter(), zoom = flat ? Math.min(maxZoom, flat.zoom) : maxZoom;
     const measure = () => {
       map.jumpTo({ center, zoom, pitch: VIEW_PITCH, bearing: 0 });
       const ps = pts.map((p) => map.project(p)), xs = ps.map((p) => p.x), ys = ps.map((p) => p.y);
@@ -843,6 +865,7 @@
     map.jumpTo(saved);
     map.easeTo({ center, zoom, pitch: VIEW_PITCH, bearing: 0, duration: 1600 });
   }
+  Object.assign(window.__smart, { fitPointsTilted }); // for automated checks
   function frameView() {
     if (mode === 'rider') fitRider();
     else fitMeAndNearest();

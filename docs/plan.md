@@ -4,7 +4,7 @@ Read `docs/decisions.md` first. It explains why the web version is throwaway and
 
 ## Current direction (supersedes the rest of this file where they differ)
 
-- **Two modes, as tabs at the bottom: Rider (the default) and Driver.** The last tab used is remembered.
+- **Three modes, as tabs at the bottom: Rider (the default), Driver and Horse.** The last tab used is remembered.
 - **Rider use case:** commuters checking when the next train reaches their station.
   - The map shows live trains, stations and your location, with no crossings or traffic.
   - A card at the bottom shows your nearest station: its name, then Northbound, then Southbound. Each direction shows the next train big (minutes away, or a clock time past an hour, live or scheduled, and how late), its destination, and the two scheduled trains after it. At the ends of the line the card shows only the direction you can go: Windsor has no Northbound row, Larkspur no Southbound row.
@@ -12,6 +12,11 @@ Read `docs/decisions.md` first. It explains why the web version is throwaway and
   - **Location:** the quick first fix can be coarse (Wi-Fi, IP or cached) and land miles off. When the precise fix arrives more than 300 m away, the map frames again, unless you've moved it yourself.
   - **Default framing:** you, your nearest station, and the next northbound and southbound trains to reach it (if they're already on the line), all fitted above the card and map buttons in the 45° tilted view.
   - Tap the Northbound or Southbound row to frame just the station and that direction's next train (or, if it hasn't set off yet, the stop it leaves from). Every other train dims so you can tell which one it is. The other row fades back. Tap the row again, or anywhere on the map, to go back to both trains.
+- **Horse use case:** made for one rider whose horses get scared by passing trains. It shows when the next train passes the bit of track nearest you, and which way it's going.
+  - The point is your location snapped to the nearest point on the track, marked on the map with a small orange dot.
+  - The card says how far away that track is, and where it is: "Near <station>" within 400 m of a station, otherwise "<station> – <station>". Then a Northbound row and a Southbound row in the same style as Rider: when the next train passes (minutes, or a clock time past an hour, live or scheduled, and how late) and the two scheduled trains after it. A train stays listed as "Now" for 20 s after it passes.
+  - **Framing:** just you and the nearest train on the line (you and the track point when no train is running).
+  - **No interactivity:** nothing on the card or map can be tapped.
 - **Driver use case:** before driving, check whether a SMART train is about to block the road crossings near you, so you don't get stuck at a lowered gate.
 - **The Driver screen shows only:** a map with live trains, your location, and the crossings near you that a train will block soon (and when). No station panel, no replay or speed controls, nothing else unless the user asks.
 - **The user is the designer.** Ask before deciding anything visual or behavioral (what shows, colors, wording, thresholds, layout). Build only what was asked, then show it as soon as there is something to look at.

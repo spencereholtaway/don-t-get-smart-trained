@@ -4,8 +4,14 @@ Read `docs/decisions.md` first. It explains why the web version is throwaway and
 
 ## Current direction (supersedes the rest of this file where they differ)
 
-- **Use case:** before driving, check whether a SMART train is about to block the road crossings near you, so you don't get stuck at a lowered gate.
-- **The screen shows only:** a map with live trains, your location, and the crossings near you that a train will block soon (and when). No station panel, no replay or speed controls, nothing else unless the user asks.
+- **Two modes, as tabs at the bottom: Rider (the default) and Driver.** The last tab used is remembered.
+- **Rider use case:** commuters checking when the next train reaches their station.
+  - The map shows live trains, stations and your location, with no crossings or traffic.
+  - A card at the bottom shows your nearest station: its name, then Northbound, then Southbound. Each direction shows the next train big (minutes away, or a clock time past an hour, live or scheduled, and how late), its destination, and the two scheduled trains after it. Trains that end at the station are left out, so Windsor shows no northbound trains and Larkspur no southbound ones.
+  - Tap a station on the map to see its trains instead. Tap elsewhere to go back to the nearest one.
+  - **Default framing:** you, your nearest station, and the next northbound and southbound trains to reach it (if they're already on the line), all fitted above the card and map buttons in the 45° tilted view.
+- **Driver use case:** before driving, check whether a SMART train is about to block the road crossings near you, so you don't get stuck at a lowered gate.
+- **The Driver screen shows only:** a map with live trains, your location, and the crossings near you that a train will block soon (and when). No station panel, no replay or speed controls, nothing else unless the user asks.
 - **The user is the designer.** Ask before deciding anything visual or behavioral (what shows, colors, wording, thresholds, layout). Build only what was asked, then show it as soon as there is something to look at.
 - **Ask before adding features.** Show the user work early, even unfinished.
 - **Hosting:** GitHub Pages from `main` (https://spencereholtaway.github.io/don-t-get-smart-trained/). The app is `web/app/`.

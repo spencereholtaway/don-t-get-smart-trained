@@ -27,10 +27,41 @@
   html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.35 var(--font); }
   #app { position: relative; height: 100%; max-width: 480px; margin: 0 auto; overflow: hidden; }
   #map { position: absolute; inset: 0; }
-  #locate, #follow { position: absolute; right: 14px; bottom: calc(env(safe-area-inset-bottom, 0px) + 28px); z-index: 2;
+  /* Bottom dock: map buttons, then the arrivals card (Rider), then the tab bar. */
+  #dock { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; flex-direction: column; pointer-events: none; }
+  #fabs { display: flex; justify-content: flex-end; gap: 10px; padding: 0 14px 12px; }
+  #locate, #follow { pointer-events: auto;
     width: 40px; height: 40px; border-radius: 50%; border: 0; padding: 0; display: grid; place-items: center; cursor: pointer;
     background: var(--panel); color: #2f7de1; box-shadow: 0 2px 10px rgba(0,0,0,.18); -webkit-tap-highlight-color: transparent; }
-  #follow { right: 64px; color: var(--accent); }
+  #follow { color: var(--accent); }
+
+  #card { pointer-events: auto; margin: 0 10px 10px; padding: 14px 18px 4px; border-radius: 22px;
+    background: var(--panel); -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5);
+    box-shadow: 0 6px 24px rgba(0,0,0,.14); font-variant-numeric: tabular-nums; }
+  #card .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  #card .station { margin: 1px 0 6px; font-size: 26px; line-height: 1.1; font-weight: 700; letter-spacing: -.02em; }
+  #card .hint { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+  #card .dir { display: grid; grid-template-columns: 1fr auto; column-gap: 12px; align-items: start; padding: 11px 0 12px; border-top: 1px solid var(--line); }
+  #card .dir-name { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+  #card .dir-to { font-size: 13px; color: var(--muted); }
+  #card .later { margin-top: 6px; font-size: 13px; color: var(--muted); }
+  #card .later b { font-weight: 500; color: var(--fg); }
+  #card .next { text-align: right; }
+  #card .big { font-size: 32px; line-height: 1; font-weight: 700; letter-spacing: -.03em; }
+  #card .unit, #card .ampm { font-size: 15px; font-weight: 600; letter-spacing: 0; color: var(--muted); margin-left: 3px; }
+  #card .later .ampm, #card .meta .ampm { font-size: 10px; font-weight: 500; margin-left: 2px; color: inherit; }
+  #card .meta { margin-top: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  #card .live { color: var(--accent); font-weight: 600; }
+  #card .live::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 4px 1px 0; border-radius: 50%; background: currentColor; }
+  #card .late { color: var(--late); font-weight: 600; }
+  #card .none { grid-column: 1 / -1; margin-top: 4px; font-size: 14px; color: var(--muted); }
+
+  #tabs { pointer-events: auto; display: flex; padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--panel); -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5); border-top: 1px solid var(--line); }
+  .tab { flex: 1; border: 0; background: none; padding: 7px 0 5px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    font: 500 11px/1.2 var(--font); color: var(--muted); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .tab svg { width: 26px; height: 26px; }
+  .tab[aria-selected="true"] { color: var(--accent); }
   #info { position: absolute; right: 14px; top: calc(env(safe-area-inset-top, 0px) + 14px); z-index: 2;
     width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
     background: var(--panel); color: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,.18); -webkit-tap-highlight-color: transparent; }
@@ -55,12 +86,27 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><circle cx="12" cy="7.5" r=".6" fill="currentColor"/></svg>
   </a>
 
-  <button id="follow" aria-pressed="false" aria-label="Follow the nearest train" title="Follow the nearest train">
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 2h8a4 4 0 0 1 4 4v9a3 3 0 0 1-2.2 2.9L20 21h-2.3l-1.9-3H8.2l-1.9 3H4l2.2-3.1A3 3 0 0 1 4 15V6a4 4 0 0 1 4-4zm-1.5 5v4h11V7h-11zm1.25 6.5a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5zm8.5 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5z"/></svg>
-  </button>
-  <button id="locate" aria-label="Show my location" title="Show my location">
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.6 2.4 2.9 10.2c-.8.3-.7 1.5.1 1.7l7.5 1.6 1.6 7.5c.2.8 1.4.9 1.7.1l7.8-18.7z"/></svg>
-  </button>
+  <div id="dock">
+    <div id="fabs">
+      <button id="follow" aria-pressed="false" aria-label="Follow the nearest train" title="Follow the nearest train">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 2h8a4 4 0 0 1 4 4v9a3 3 0 0 1-2.2 2.9L20 21h-2.3l-1.9-3H8.2l-1.9 3H4l2.2-3.1A3 3 0 0 1 4 15V6a4 4 0 0 1 4-4zm-1.5 5v4h11V7h-11zm1.25 6.5a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5zm8.5 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5z"/></svg>
+      </button>
+      <button id="locate" aria-label="Show my location" title="Show my location">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.6 2.4 2.9 10.2c-.8.3-.7 1.5.1 1.7l7.5 1.6 1.6 7.5c.2.8 1.4.9 1.7.1l7.8-18.7z"/></svg>
+      </button>
+    </div>
+    <section id="card" aria-label="Next trains at your station" aria-live="polite" hidden></section>
+    <nav id="tabs" role="tablist" aria-label="Mode">
+      <button class="tab" role="tab" data-mode="rider" aria-selected="true">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="4.6" r="2.4"/><path d="M9.6 8.2h4.8a2 2 0 0 1 2 2v5.1a1.1 1.1 0 0 1-2.2 0v-3.6h-.7V21a1.2 1.2 0 0 1-2.4 0v-5.4h-.2V21a1.2 1.2 0 0 1-2.4 0v-9.3h-.7v3.6a1.1 1.1 0 0 1-2.2 0v-5.1a2 2 0 0 1 2-2z"/></svg>
+        Rider
+      </button>
+      <button class="tab" role="tab" data-mode="driver" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.3 4.5h9.4a2 2 0 0 1 1.9 1.4l1.6 4.8A2.5 2.5 0 0 1 21.5 13v4.5a1 1 0 0 1-1 1h-.8V20a1.3 1.3 0 0 1-2.6 0v-1.5H6.9V20a1.3 1.3 0 0 1-2.6 0v-1.5h-.8a1 1 0 0 1-1-1V13a2.5 2.5 0 0 1 1.3-2.3l1.6-4.8a2 2 0 0 1 1.9-1.4zm.3 2-1.3 4h11.4l-1.3-4H7.6zM6 13.2a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8zm12 0a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8z"/></svg>
+        Driver
+      </button>
+    </nav>
+  </div>
 </div>
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -266,8 +312,10 @@
   const TRAINS_Z = 14, POINTERS_Z = TRAINS_Z - 0.5;
   const map = new maplibregl.Map({
     container: 'map', style: styleUrl(), bounds, fitBoundsOptions: { padding: { top: 40, bottom: 40, left: 30, right: 30 } },
-    pitch: VIEW_PITCH, maxPitch: 70, minZoom: 7, attributionControl: { compact: true }, dragRotate: true, touchPitch: true,
+    pitch: VIEW_PITCH, maxPitch: 70, minZoom: 7, attributionControl: false, dragRotate: true, touchPitch: true,
   });
+  // top-left, so the dock at the bottom doesn't cover it
+  map.addControl(new maplibregl.AttributionControl({ compact: true }), 'top-left');
   map.touchZoomRotate.enableRotation();
   // diff: false rebuilds the style from scratch. The light and dark styles share their sources,
   // so a diffed swap would delete the app's layers without firing style.load to add them back.
@@ -375,6 +423,7 @@
     map.addSource('me', { type: 'geojson', data: { type: 'FeatureCollection', features: me ? [me] : [] } });
     map.addLayer({ id: 'me-pulse', type: 'circle', source: 'me', paint: { 'circle-radius': 10, 'circle-color': '#2f7de1', 'circle-opacity': 0.2, 'circle-pitch-alignment': 'map' } });
     map.addLayer({ id: 'me', type: 'circle', source: 'me', paint: { 'circle-radius': 6, 'circle-color': '#2f7de1', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2, 'circle-pitch-alignment': 'map' } });
+    applyModeToMap();
   }
   let me = null;
 
@@ -534,7 +583,8 @@
       const { longitude: lon, latitude: lat } = pos.coords;
       me = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} };
       map.getSource('me')?.setData({ type: 'FeatureCollection', features: [me] }); // if the style is still loading, addAppLayers draws `me`
-      if (fly && !refine) fitMeAndNearest();
+      renderCard();
+      if (fly && !refine) frameView();
     };
     const fail = (err) => {
       if (id !== locateId || done) return;
@@ -558,7 +608,7 @@
       const t = nearestTrain();
       if (t) b.extend([t.lon, t.lat]);
       else { b.extend([n.s.lon, n.s.lat]); if (crossings.length) { const c = nearestCrossing(lon, lat); b.extend([c.lon, c.lat]); } }
-      fitTilted(b, { top: 80, bottom: 100, left: 50, right: 50 }, 12.5);
+      fitTilted(b, { top: 80, bottom: 100 + tabsEl.offsetHeight, left: 50, right: 50 }, 12.5);
     } else {
       fitTilted(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds([lon, lat], [lon, lat])), 40);
     }
@@ -577,9 +627,18 @@
   }
   locateBtn.onclick = () => locate(true);
 
-  // tap a crossing to see its next traffic event; tap elsewhere to go back to the one nearest you
+  // Driver: tap a crossing to see its next traffic event; tap elsewhere to go back to the one nearest you.
+  // Rider: tap a station to see its arrivals; tap elsewhere to go back to the one nearest you.
   map.on('click', (e) => {
-    const r = 18, hits = map.getLayer('crossings') ? map.queryRenderedFeatures([[e.point.x - r, e.point.y - r], [e.point.x + r, e.point.y + r]], { layers: ['crossings'] }) : [];
+    const r = 18;
+    if (mode === 'rider') {
+      const hits = map.getLayer('stations') ? map.queryRenderedFeatures([[e.point.x - r, e.point.y - r], [e.point.x + r, e.point.y + r]], { layers: ['stations'] }) : [];
+      const hit = hits.length ? stationsById[hits[0].properties.id] : null;
+      selectedStation = hit && hit !== selectedStation ? hit : null;
+      renderCard();
+      return;
+    }
+    const hits = map.getLayer('crossings') ? map.queryRenderedFeatures([[e.point.x - r, e.point.y - r], [e.point.x + r, e.point.y + r]], { layers: ['crossings'] }) : [];
     const hit = hits.length ? crossings.find((c) => c.id === hits[0].properties.id) : null;
     selectedCrossing = hit && hit !== selectedCrossing ? hit : null;
     updateCrossings();
@@ -605,6 +664,154 @@
   followBtn.onclick = () => setFollowing(!following);
   setInterval(() => { if (following && !map.isMoving()) fitFollow(false); }, 1500);
   for (const ev of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart']) map.on(ev, (e) => { if (following && e.originalEvent) setFollowing(false); });
+
+  // ---------- modes: Rider (arrivals at your station) and Driver (crossings and traffic) ----------
+  const card = document.getElementById('card'), tabsEl = document.getElementById('tabs');
+  const DRIVER_LAYERS = ['heat', 'crossing-pulse', 'crossings', 'crossing-labels'];
+  let mode = 'rider';
+  try { if (localStorage.getItem('mode') === 'driver') mode = 'driver'; } catch {}
+  let selectedStation = null, highlighted = null;
+  function riderStation() {
+    if (selectedStation) return selectedStation;
+    return me ? nearestStation(...me.geometry.coordinates).s : null;
+  }
+  function applyModeToMap() {
+    for (const id of DRIVER_LAYERS) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', mode === 'driver' ? 'visible' : 'none');
+    const st = mode === 'rider' ? riderStation() : null;
+    if (!map.getSource('stations')) return;
+    if (highlighted && highlighted !== st) map.setFeatureState({ source: 'stations', id: +highlighted.id }, { selected: false });
+    if (st) map.setFeatureState({ source: 'stations', id: +st.id }, { selected: true });
+    highlighted = st;
+  }
+  function setMode(m) {
+    mode = m;
+    try { localStorage.setItem('mode', m); } catch {}
+    for (const t of tabsEl.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.mode === m));
+    card.hidden = m !== 'rider';
+    if (m !== 'rider') selectedStation = null;
+    else selectedCrossing = null;
+    renderCard();
+    applyModeToMap();
+  }
+  for (const t of tabsEl.querySelectorAll('.tab')) t.onclick = () => { if (t.dataset.mode !== mode) { setMode(t.dataset.mode); frameView(); } };
+
+  // Upcoming trains that stop at this station, per direction (1 = northbound, 0 = southbound),
+  // today and the next two service days. Trains that end here are left out: you can't board them.
+  // Live predictions are used for today's trips while the live data is fresh.
+  function arrivalsAt(stationId) {
+    const t = nowS(), today = la(t), out = { 0: [], 1: [] };
+    for (let off = 0; off < 3; off++) {
+      const day = la(today.midnight + off * 86400 + 43200), services = activeServices(day.ymd, day.dow);
+      for (const trip of data.trips) {
+        if (!services.has(trip.service)) continue;
+        const i = trip.stops.findIndex((s) => s[0] === stationId);
+        if (i < 0 || i === trip.stops.length - 1) continue;
+        const sched = day.midnight + trip.stops[i][1];
+        const p = off === 0 && lastW > 0.5 ? predicted[trip.id] : null;
+        const arr = p ? day.midnight + p.stops[i][1] : sched, dep = p ? day.midnight + p.stops[i][2] : day.midnight + trip.stops[i][2];
+        if (dep <= t) continue;
+        out[trip.dir].push({ trip, arr, dep, sched, live: !!p, off });
+      }
+    }
+    for (const d of [0, 1]) out[d].sort((a, b) => a.arr - b.arr);
+    return out;
+  }
+  // The next train (live where we have it), then the two after it by the timetable.
+  function upcoming(list) {
+    if (!list.length) return null;
+    const [next] = list;
+    const later = list.slice(1).filter((a) => a.sched > next.sched).sort((a, b) => a.sched - b.sched).slice(0, 2);
+    return { next, later };
+  }
+  function clockHTML(u, withDay) {
+    const parts = timeFmt.formatToParts(new Date(u * 1000));
+    const hm = parts.filter((p) => p.type !== 'dayPeriod').map((p) => p.value).join('').trim();
+    const ap = parts.find((p) => p.type === 'dayPeriod')?.value ?? '';
+    const day = withDay && la(u).ymd !== la(nowS()).ymd ? `${dayFmt.format(new Date(u * 1000))} ` : '';
+    return `${day}${hm}<span class="ampm">${ap}</span>`;
+  }
+  function dirHTML(name, list, stationId, dir) {
+    const u = upcoming(list), t = nowS();
+    if (!u) {
+      const terminal = !data.trips.some((tr) => tr.dir === dir && tr.stops.slice(0, -1).some((s) => s[0] === stationId));
+      return `<div class="dir"><div><div class="dir-name">${name}</div></div><div class="none">${terminal ? `No ${name.toLowerCase()} trains from here` : 'No trains in the next two days'}</div></div>`;
+    }
+    const { next, later } = u, s = next.arr - t;
+    let big, meta = next.live ? '<span class="live">Live</span>' : 'Scheduled';
+    if (s <= 30) big = 'Now';
+    else if (s < 3600) { big = `${Math.ceil(s / 60)}<span class="unit">min</span>`; meta += ` · ${clockHTML(next.arr)}`; }
+    else big = clockHTML(next.arr, true);
+    const late = next.live ? Math.round((next.arr - next.sched) / 60) : 0;
+    if (late >= 2) meta += ` · <span class="late">${late} min late</span>`;
+    const laterHTML = later.length ? `<div class="later">Then ${later.map((a) => `<b>${clockHTML(a.sched, true)}</b>`).join(' · ')}</div>` : '';
+    return `<div class="dir"><div><div class="dir-name">${name}</div><div class="dir-to">to ${next.trip.headsign}</div>${laterHTML}</div>`
+      + `<div class="next"><div class="big">${big}</div><div class="meta">${meta}</div></div></div>`;
+  }
+  let cardHTML = '';
+  function renderCard() {
+    if (mode !== 'rider') return;
+    const st = riderStation();
+    let html;
+    if (!st) html = '<div class="eyebrow">Next trains</div><div class="station">Find your station</div><p class="hint">Share your location, or tap a station on the map.</p>';
+    else {
+      const a = arrivalsAt(st.id);
+      html = `<div class="eyebrow">${selectedStation ? 'Station' : 'Nearest station'}</div><div class="station">${st.name}</div>`
+        + dirHTML('Northbound', a[1], st.id, 1) + dirHTML('Southbound', a[0], st.id, 0);
+    }
+    if (html !== cardHTML) { card.innerHTML = cardHTML = html; applyModeToMap(); }
+  }
+  setInterval(renderCard, 1000);
+
+  // Rider framing: you, your station, and the next northbound and southbound trains to reach it
+  // (those that are already on the line), all clear of the card.
+  function fitRider() {
+    const st = riderStation();
+    if (!st) return;
+    const pts = [[st.lon, st.lat]];
+    if (me) pts.push(me.geometry.coordinates);
+    if (me && nearestStation(...me.geometry.coordinates).miles >= 30) return fitTilted(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(pts[1], pts[1])), 40);
+    const a = arrivalsAt(st.id);
+    for (const d of [1, 0]) {
+      const n = a[d][0], tr = n && n.off === 0 && lastTrains.find((x) => x.trip.id === n.trip.id);
+      if (tr) pts.push([tr.lon, tr.lat]);
+    }
+    // clear of the map buttons and the card below them
+    const box = map.getContainer().getBoundingClientRect(), top = document.getElementById('fabs').getBoundingClientRect().top;
+    fitPointsTilted(pts, { top: 70, bottom: box.bottom - top + 16, left: 40, right: 40 }, 15);
+  }
+  // Fit points into the padded part of the screen in the tilted view itself: try a camera,
+  // measure where the points land, adjust, repeat. jumpTo is synchronous, and the camera is
+  // put back before the next frame draws, so none of the trial cameras are ever seen.
+  function fitPointsTilted(pts, pad, maxZoom) {
+    const W = map.getContainer().clientWidth, H = map.getContainer().clientHeight;
+    const box = { l: pad.left, r: W - pad.right, t: pad.top, b: H - pad.bottom };
+    const saved = { center: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
+    const b = pts.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(pts[0], pts[0]));
+    let center = b.getCenter(), zoom = maxZoom;
+    const measure = () => {
+      map.jumpTo({ center, zoom, pitch: VIEW_PITCH, bearing: 0 });
+      const ps = pts.map((p) => map.project(p)), xs = ps.map((p) => p.x), ys = ps.map((p) => p.y);
+      return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+    };
+    for (let i = 0; i < 8; i++) {
+      const m = measure();
+      const s = Math.min((box.r - box.l) / Math.max(1, m.x1 - m.x0), (box.b - box.t) / Math.max(1, m.y1 - m.y0));
+      center = map.unproject([W / 2 + (m.x0 + m.x1) / 2 - (box.l + box.r) / 2, H / 2 + (m.y0 + m.y1) / 2 - (box.t + box.b) / 2]);
+      zoom = Math.max(7, Math.min(maxZoom, zoom + Math.log2(s) * 0.8));
+    }
+    for (let i = 0; i < 20; i++) { // make sure: back out until everything is inside
+      const m = measure();
+      if (m.x0 >= box.l - 1 && m.x1 <= box.r + 1 && m.y0 >= box.t - 1 && m.y1 <= box.b + 1) break;
+      zoom -= 0.1;
+    }
+    map.jumpTo(saved);
+    map.easeTo({ center, zoom, pitch: VIEW_PITCH, bearing: 0, duration: 1600 });
+  }
+  function frameView() {
+    if (mode === 'rider') fitRider();
+    else fitMeAndNearest();
+  }
+  setMode(mode);
   locate(true);
 
   // ---------- live data ----------

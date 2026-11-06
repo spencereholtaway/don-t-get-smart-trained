@@ -102,7 +102,7 @@
     <section id="card" aria-label="Next trains at your station" aria-live="polite" hidden></section>
     <nav id="tabs" role="tablist" aria-label="Mode">
       <button class="tab" role="tab" data-mode="rider" aria-selected="true">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="4.6" r="2.4"/><path d="M9.6 8.2h4.8a2 2 0 0 1 2 2v5.1a1.1 1.1 0 0 1-2.2 0v-3.6h-.7V21a1.2 1.2 0 0 1-2.4 0v-5.4h-.2V21a1.2 1.2 0 0 1-2.4 0v-9.3h-.7v3.6a1.1 1.1 0 0 1-2.2 0v-5.1a2 2 0 0 1 2-2z"/></svg>
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 2h8a4 4 0 0 1 4 4v9a3 3 0 0 1-2.2 2.9L20 21h-2.3l-1.9-3H8.2l-1.9 3H4l2.2-3.1A3 3 0 0 1 4 15V6a4 4 0 0 1 4-4zm-1.5 5v4h11V7h-11zm1.25 6.5a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5zm8.5 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5z"/></svg>
         Rider
       </button>
       <button class="tab" role="tab" data-mode="driver" aria-selected="false">
@@ -406,7 +406,7 @@
     map.addImage('arrow', arrowIcon(), { pixelRatio: 2 });
     map.addLayer({ id: 'train-arrows', type: 'symbol', source: 'train-marks', filter: ['==', ['get', 'kind'], 'arrow'],
       layout: { 'icon-image': 'arrow', 'icon-rotate': ['get', 'bearing'], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
-      paint: { 'icon-opacity': ['interpolate', ['linear'], ['zoom'], POINTERS_Z, 0, TRAINS_Z, 1, 14.5, 1, 16, 0] } });
+      paint: { 'icon-opacity': ['interpolate', ['linear'], ['zoom'], POINTERS_Z, 0, TRAINS_Z, ['case', ['get', 'dim'], 0.25, 1], 14.5, ['case', ['get', 'dim'], 0.25, 1], 16, 0] } });
     // headlight glow ahead of each train (dark mode only), under the 3D trains
     map.addSource('headlights', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'headlights', type: 'circle', source: 'headlights', layout: { visibility: dark.matches ? 'visible' : 'none' },
@@ -422,7 +422,7 @@
     map.addLayer({ id: 'train-pointers', type: 'symbol', source: 'train-marks', filter: ['==', ['get', 'kind'], 'pointer'],
       layout: { 'icon-image': 'pointer', 'icon-rotate': ['get', 'angle'], 'icon-rotation-alignment': 'viewport', 'icon-pitch-alignment': 'viewport',
         'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.75, 11, 1], 'icon-allow-overlap': true, 'icon-ignore-placement': true },
-      paint: { 'icon-opacity': ['interpolate', ['linear'], ['zoom'], POINTERS_Z, 1, TRAINS_Z, 0] } });
+      paint: { 'icon-opacity': ['interpolate', ['linear'], ['zoom'], POINTERS_Z, ['case', ['get', 'dim'], 0.25, 1], TRAINS_Z, 0] } });
 
     map.addSource('me', { type: 'geojson', data: { type: 'FeatureCollection', features: me ? [me] : [] } });
     map.addLayer({ id: 'me-pulse', type: 'circle', source: 'me', paint: { 'circle-radius': 10, 'circle-color': '#2f7de1', 'circle-opacity': 0.2, 'circle-pitch-alignment': 'map' } });
@@ -572,7 +572,8 @@
     locateBtn.classList.toggle('error', state === 'error');
     locateBtn.title = locateBtn.ariaLabel = why || 'Show my location';
   }
-  let locateId = 0;
+  let locateId = 0, framedAt = null, userMovedMap = false;
+  for (const ev of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart']) map.on(ev, (e) => { if (e.originalEvent) userMovedMap = true; });
   function locate(fly) {
     if (!navigator.geolocation) return setLocState('error', 'This browser can’t share your location');
     const id = ++locateId; // a newer tap supersedes this request
@@ -588,7 +589,12 @@
       me = { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} };
       map.getSource('me')?.setData({ type: 'FeatureCollection', features: [me] }); // if the style is still loading, addAppLayers draws `me`
       renderCard();
-      if (fly && !refine) frameView();
+      // The quick first fix can be coarse (Wi-Fi or IP based, or a cached one) and land you
+      // miles away. If the precise fix moves you more than 300 m, frame again, unless you've
+      // moved the map yourself since.
+      if (fly && !refine) { frameView(); framedAt = [lon, lat]; userMovedMap = false; }
+      else if (fly && refine && framedAt && !userMovedMap
+        && Math.hypot((lon - framedAt[0]) * 88000, (lat - framedAt[1]) * 111000) > 300) { frameView(); framedAt = [lon, lat]; }
     };
     const fail = (err) => {
       if (id !== locateId || done) return;
@@ -678,6 +684,7 @@
   let mode = 'rider';
   try { if (localStorage.getItem('mode') === 'driver') mode = 'driver'; } catch {}
   let selectedStation = null, selectedDir = null, highlighted = null;
+  let focusTripId = null; // with a direction picked, the train it shows (others are dimmed)
   function riderStation() {
     if (selectedStation) return selectedStation;
     return me ? nearestStation(...me.geometry.coordinates).s : null;
@@ -695,7 +702,7 @@
     try { localStorage.setItem('mode', m); } catch {}
     for (const t of tabsEl.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.mode === m));
     card.hidden = m !== 'rider';
-    if (m !== 'rider') { selectedStation = null; selectedDir = null; }
+    if (m !== 'rider') { selectedStation = null; selectedDir = null; focusTripId = null; }
     else selectedCrossing = null;
     renderCard();
     applyModeToMap();
@@ -769,6 +776,9 @@
     }
     if (html !== cardHTML) { card.innerHTML = cardHTML = html; applyModeToMap(); }
     card.classList.toggle('picked', selectedDir != null);
+    let focus = null;
+    if (mode === 'rider' && selectedDir != null && st) { const n = arrivalsAt(st.id)[selectedDir][0]; if (n && n.off === 0) focus = n.trip.id; }
+    focusTripId = focus;
   }
   // Tap a direction to frame the station and that direction's next train; tap it again
   // (or anywhere on the map) to go back to both trains.
@@ -798,6 +808,8 @@
     for (const d of selectedDir == null ? [1, 0] : [selectedDir]) {
       const n = a[d][0], tr = n && n.off === 0 && lastTrains.find((x) => x.trip.id === n.trip.id);
       if (tr) pts.push([tr.lon, tr.lat]);
+      // a picked train that hasn't set off yet: show where it will leave from
+      else if (n && selectedDir != null) { const o = stationsById[n.trip.stops[0][0]]; pts.push([o.lon, o.lat]); }
     }
     // clear of the map buttons and the card below them
     const box = map.getContainer().getBoundingClientRect(), top = document.getElementById('fabs').getBoundingClientRect().top;
@@ -861,6 +873,12 @@
   // cars read at phone size. In dark mode the windows are lit and the headlights glow.
   const CAR_M = 26, GAP_M = 1, WIDTH_M = 3, TRUCK_M = 4, NOSE_M = 2.6, CARS = 2, CHUNK = 1.8;
   let headlights = [], marks = [], trainsBusy = false, trainsSentAt = 0, lastTrains = [];
+  // Rider, with a direction picked: every train but the next one to your station is dimmed.
+  const isDim = (x) => focusTripId != null && x.trip.id !== focusTripId;
+  function fade(hex) { // 75% of the way to the map's background
+    const bg = dark.matches ? [15, 20, 17] : [242, 243, 240], c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    return '#' + c.map((v, i) => Math.round(v + (bg[i] - v) * 0.75).toString(16).padStart(2, '0')).join('');
+  }
   function trainFeatures(trains) {
     const k = Math.max(1, 2 ** (16 - map.getZoom())), kw = k * CHUNK, feats = [];
     const D = dark.matches;
@@ -874,11 +892,12 @@
         const a0 = pointAt(x.trip.shape, x.dist - 6 * k), a1 = pointAt(x.trip.shape, x.dist + 6 * k);
         const p0 = map.project([a0.lon, a0.lat]), p1 = map.project([a1.lon, a1.lat]);
         const angle = p0.x === p1.x && p0.y === p1.y ? x.bearing - map.getBearing() : Math.atan2(p1.x - p0.x, p0.y - p1.y) * 180 / Math.PI;
-        marks.push({ type: 'Feature', properties: { kind: 'pointer', angle }, geometry: { type: 'Point', coordinates: [x.lon, x.lat] } });
+        marks.push({ type: 'Feature', properties: { kind: 'pointer', angle, dim: isDim(x) }, geometry: { type: 'Point', coordinates: [x.lon, x.lat] } });
       }
     }
     if (z < POINTERS_Z) return feats; // no 3D trains this far out
     for (const x of trains) {
+      const dim = isDim(x);
       for (let i = 0; i < CARS; i++) {
         const dF = x.dist - i * (CAR_M + GAP_M) * k, dR = dF - CAR_M * k;
         const a = pointAt(x.trip.shape, dF - TRUCK_M * k), b = pointAt(x.trip.shape, dR + TRUCK_M * k); // front and rear trucks
@@ -888,7 +907,7 @@
         const px = uy, py = -ux, mid = { lon: (a.lon + b.lon) / 2, lat: (a.lat + b.lat) / 2 };
         // car-local coordinates: x along the car (meters, + toward the front), y across, from the center
         const P = (al, sd) => [mid.lon + (ux * al * k + px * sd * kw) / kx, mid.lat + (uy * al * k + py * sd * kw) / ky];
-        const add = (ring, base, top, color) => feats.push({ type: 'Feature', properties: { color, b: base * kw, h: top * kw }, geometry: { type: 'Polygon', coordinates: [[...ring, ring[0]]] } });
+        const add = (ring, base, top, color) => feats.push({ type: 'Feature', properties: { color: dim ? fade(color) : color, b: base * kw, h: top * kw }, geometry: { type: 'Polygon', coordinates: [[...ring, ring[0]]] } });
         const box = (x0, x1, y0, y1, base, top, color) => add([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)], base, top, color);
         const half = CAR_M / 2, hw = WIDTH_M / 2, frontCab = i === 0, rearCab = i === CARS - 1;
         const bx0 = rearCab ? -half + NOSE_M : -half, bx1 = frontCab ? half - NOSE_M : half;
@@ -905,11 +924,11 @@
           const lamp = sg > 0 ? C.head : C.tail;
           for (const side of [-1, 1]) box(xb - sg * 0.35, xb + sg * 0.06, side * pinch * 0.45 - 0.22, side * pinch * 0.45 + 0.22, 1.3, 1.65, lamp);
           if (sg > 0) {
-            headlights.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: P(half + 6, 0) } });
+            if (!dim) headlights.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: P(half + 6, 0) } });
             // direction arrow: on the track just ahead of the train, pointing along the track there
             // (distance along the shape grows in the direction of travel)
             const ad = x.dist + 14 * k, a0 = pointAt(x.trip.shape, ad - 15), a1 = pointAt(x.trip.shape, ad + 15), at = pointAt(x.trip.shape, ad);
-            marks.push({ type: 'Feature', properties: { kind: 'arrow', bearing: a0.lon === a1.lon && a0.lat === a1.lat ? at.bearing : bearing([a0.lon, a0.lat], [a1.lon, a1.lat]) }, geometry: { type: 'Point', coordinates: [at.lon, at.lat] } });
+            marks.push({ type: 'Feature', properties: { kind: 'arrow', dim, bearing: a0.lon === a1.lon && a0.lat === a1.lat ? at.bearing : bearing([a0.lon, a0.lat], [a1.lon, a1.lat]) }, geometry: { type: 'Point', coordinates: [at.lon, at.lat] } });
           }
         }
         // windows and doors on both sides, as thin panels on the outside of the body

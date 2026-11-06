@@ -18,7 +18,7 @@ Read `docs/decisions.md` first. It explains why the web version is throwaway and
   - Tap the Northbound or Southbound row to frame just the station and that direction's next train (or, if it hasn't set off yet, the stop it leaves from). Every other train dims so you can tell which one it is. The other row fades back. Tap the row again, or anywhere on the map, to go back to both trains.
 - **Horse use case:** made for one rider whose horses get scared by passing trains. It shows when the next train passes the bit of track nearest you, and which way it's going.
   - The point is your location snapped to the nearest point on the track, marked on the map with a small orange dot.
-  - The card shows just two rows: "Next train northbound" and the minutes until it passes, then "Next train southbound" the same way. "Now" from 30 s before a train passes until 20 s after. A direction that never passes that point (e.g. beyond the end of the line) has no row.
+  - The card lists the next three trains to pass that point, whichever way they're going, soonest first: "1. 2m Northbound", "2. 8m Northbound", "3. 16m Southbound". Past an hour it reads "1h 15m". "Now" from 30 s before a train passes until 20 s after.
   - **Framing:** just you and the next train to pass the track near you, in either direction. If it hasn't set off yet, you and the station it leaves from; with no more trains today, you and the track point.
   - **No interactivity:** nothing on the card or map can be tapped.
 - **Driver use case:** before driving, check whether a SMART train is about to block the road crossings near you, so you don't get stuck at a lowered gate.

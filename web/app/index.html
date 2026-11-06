@@ -59,22 +59,26 @@
   #card .live::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 4px 1px 0; border-radius: 50%; background: currentColor; }
   #card .late { color: var(--late); font-weight: 600; }
   #card .none { grid-column: 1 / -1; margin-top: 4px; font-size: 14px; color: var(--muted); }
-  #card .dir.horse { align-items: center; }
+  #card .dir.horse { display: flex; align-items: baseline; gap: 14px; }
   #card .dir.horse:first-child { border-top: 0; }
-  #card .dir.horse .none { font-size: 15px; font-weight: 500; letter-spacing: 0; }
+  #card .dir.horse .num { width: 1.2em; font-size: 16px; font-weight: 600; color: var(--muted); }
+  #card .dir.horse .big { min-width: 2.9em; }
+  #card .dir.horse .unit { margin-left: 1px; }
+  #card .dir.horse .dir-name { font-size: 18px; }
+  #card .dir.horse .none { margin: 0; }
 
   #tabs { pointer-events: auto; display: flex; padding-bottom: env(safe-area-inset-bottom, 0px);
     background: var(--panel); -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5); border-top: 1px solid var(--line); }
   .tab { flex: 1; border: 0; background: none; padding: 6px 0 5px; display: flex; flex-direction: column; align-items: center; gap: 2px;
     font: 500 11px/1.2 var(--font); cursor: pointer; -webkit-tap-highlight-color: transparent; }
-  /* Unselected tabs are a light gray; the selected one is a strong green, bold, with a pill behind its icon. */
+  /* Emoji icons: unselected tabs are faded to gray; the selected one is full color, with a bold green label and a pill behind its icon. */
   .tab { --tab-off: #9aa39d; --tab-on: #2f7a3e; color: var(--tab-off); }
-  .tab svg { width: 26px; height: 26px; padding: 3px 16px; border-radius: 16px; transition: background .2s; }
+  .tab-icon { font-size: 24px; line-height: 30px; padding: 0 16px; border-radius: 16px; filter: grayscale(1); opacity: .45; transition: background .2s, opacity .2s, filter .2s; }
   .tab[aria-selected="true"] { color: var(--tab-on); font-weight: 700; }
-  .tab[aria-selected="true"] svg { background: rgba(47,122,62,.16); }
+  .tab[aria-selected="true"] .tab-icon { filter: none; opacity: 1; background: rgba(47,122,62,.16); }
   @media (prefers-color-scheme: dark) {
     .tab { --tab-off: #6b766e; --tab-on: #9fd69f; }
-    .tab[aria-selected="true"] svg { background: rgba(159,214,159,.18); }
+    .tab[aria-selected="true"] .tab-icon { background: rgba(159,214,159,.18); }
   }
   #info { position: absolute; right: 14px; top: calc(env(safe-area-inset-top, 0px) + 14px); z-index: 2;
     width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
@@ -112,15 +116,15 @@
     <section id="card" aria-label="Next trains at your station" aria-live="polite" hidden></section>
     <nav id="tabs" role="tablist" aria-label="Mode">
       <button class="tab" role="tab" data-mode="rider" aria-selected="true">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 2h8a4 4 0 0 1 4 4v9a3 3 0 0 1-2.2 2.9L20 21h-2.3l-1.9-3H8.2l-1.9 3H4l2.2-3.1A3 3 0 0 1 4 15V6a4 4 0 0 1 4-4zm-1.5 5v4h11V7h-11zm1.25 6.5a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5zm8.5 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5z"/></svg>
+        <span class="tab-icon" aria-hidden="true">🚆</span>
         Rider
       </button>
       <button class="tab" role="tab" data-mode="driver" aria-selected="false">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.3 4.5h9.4a2 2 0 0 1 1.9 1.4l1.6 4.8A2.5 2.5 0 0 1 21.5 13v4.5a1 1 0 0 1-1 1h-.8V20a1.3 1.3 0 0 1-2.6 0v-1.5H6.9V20a1.3 1.3 0 0 1-2.6 0v-1.5h-.8a1 1 0 0 1-1-1V13a2.5 2.5 0 0 1 1.3-2.3l1.6-4.8a2 2 0 0 1 1.9-1.4zm.3 2-1.3 4h11.4l-1.3-4H7.6zM6 13.2a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8zm12 0a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8z"/></svg>
+        <span class="tab-icon" aria-hidden="true">🚗</span>
         Driver
       </button>
       <button class="tab" role="tab" data-mode="horse" aria-selected="false">
-        <svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M9 22v-4.2c0-1.5-.9-2.6-2.4-3.1l-2.5-.8c-1.1-.4-1.5-1.6-.9-2.5l3.7-5.5c.8-1.2 2-2 3.3-2.4l.9-1.9 1.3 1.5 1.3-1.7.8 2c3.6 1.2 5.9 4.6 5.9 8.6V22H9zm2.2-14.6a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>
+        <span class="tab-icon" aria-hidden="true">🐎</span>
         Horse
       </button>
     </nav>
@@ -935,20 +939,23 @@
     for (const d of [0, 1]) out[d].sort((a, b) => a.arr - b.arr);
     return out;
   }
-  const covers = (dir) => data.trips.some((tr) => tr.dir === dir && timeAtDist(tr.stops, trackPt.d[tr.shape]) != null);
-  // Just "Next train northbound" and the minutes until it passes, then the same southbound.
-  function horseRowHTML(name, list, dir) {
-    if (!covers(dir)) return ''; // no train in this direction ever passes here
-    const n = list[0], s = n ? n.arr - nowS() : 0;
-    const big = !n ? '<span class="none">None soon</span>' : s <= 30 ? 'Now' : `${Math.ceil(s / 60)}<span class="unit">min</span>`;
-    return `<div class="dir horse"><div class="dir-name">Next train ${name}</div><div class="next"><div class="big">${big}</div></div></div>`;
+  // The next three trains to pass, whichever way they're going: "1  2m  Northbound".
+  const HORSE_COUNT = 3;
+  function horseWait(sec) {
+    if (sec <= 30) return 'Now';
+    const m = Math.ceil(sec / 60);
+    return m < 60 ? `${m}<span class="unit">m</span>` : `${Math.floor(m / 60)}<span class="unit">h</span> ${m % 60}<span class="unit">m</span>`;
+  }
+  function horseRowHTML(x, i) {
+    return `<div class="dir horse"><span class="num">${i + 1}.</span><span class="big">${horseWait(x.arr - nowS())}</span><span class="dir-name">${x.trip.dir === 1 ? 'Northbound' : 'Southbound'}</span></div>`;
   }
   function renderHorse() {
     let html;
     if (!trackPt) html = '<div class="eyebrow">Next trains</div><div class="station">Find your location</div><p class="hint">Share your location to see when trains pass the track nearest you.</p>';
     else {
       const a = passesAt(trackPt);
-      html = horseRowHTML('northbound', a[1], 1) + horseRowHTML('southbound', a[0], 0);
+      const next = [...a[0], ...a[1]].sort((x, y) => x.arr - y.arr).slice(0, HORSE_COUNT);
+      html = next.length ? next.map(horseRowHTML).join('') : '<div class="dir horse"><span class="none">No trains in the next two days</span></div>';
     }
     if (html !== cardHTML) card.innerHTML = cardHTML = html;
     card.classList.remove('picked');

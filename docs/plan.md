@@ -15,6 +15,7 @@ Read `docs/decisions.md` first. It explains why the web version is throwaway and
 - **The user is the designer.** Ask before deciding anything visual or behavioral (what shows, colors, wording, thresholds, layout). Build only what was asked, then show it as soon as there is something to look at.
 - **Ask before adding features.** Show the user work early, even unfinished.
 - **Hosting:** GitHub Pages from `main` (https://spencereholtaway.github.io/don-t-get-smart-trained/). The app is `web/app/`.
+  - https://www.holtawaydesign.com/smart/ shows the same app. The holtawaydesign site (Netlify) proxies GitHub Pages there, so it updates when Pages deploys. Allow up to 10 minutes of caching. If a Pages deploy fails, re-run it or push another commit to `main`.
 - **Live data:** a Cloudflare Worker holds `API_511_KEY`, polls 511 within the Rule zero budget, caches, and serves JSON to the page. Deploy it with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` from the environment.
 - **Crossing locations:** OpenStreetMap level crossings on the SMART line, fetched once from `overpass-api.de` and saved into the app data.
 - **Next steps, in order:** (1) deploy the Worker and make the map live, (2) add crossings near you, (3) show the user and stop.

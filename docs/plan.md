@@ -14,8 +14,8 @@ Read `docs/decisions.md` first. It explains why the web version is throwaway and
   - Tap the Northbound or Southbound row to frame just the station and that direction's next train (or, if it hasn't set off yet, the stop it leaves from). Every other train dims so you can tell which one it is. The other row fades back. Tap the row again, or anywhere on the map, to go back to both trains.
 - **Horse use case:** made for one rider whose horses get scared by passing trains. It shows when the next train passes the bit of track nearest you, and which way it's going.
   - The point is your location snapped to the nearest point on the track, marked on the map with a small orange dot.
-  - The card says how far away that track is, and where it is: "Near <station>" within 400 m of a station, otherwise "<station> – <station>". Then a Northbound row and a Southbound row in the same style as Rider: when the next train passes (minutes, or a clock time past an hour, live or scheduled, and how late) and the two scheduled trains after it. A train stays listed as "Now" for 20 s after it passes.
-  - **Framing:** just you and the nearest train on the line (you and the track point when no train is running).
+  - The card shows just two rows: "Next train northbound" and the minutes until it passes, then "Next train southbound" the same way. "Now" from 30 s before a train passes until 20 s after. A direction that never passes that point (e.g. beyond the end of the line) has no row.
+  - **Framing:** just you and the next train to pass the track near you, in either direction. If it hasn't set off yet, you and the station it leaves from; with no more trains today, you and the track point.
   - **No interactivity:** nothing on the card or map can be tapped.
 - **Driver use case:** before driving, check whether a SMART train is about to block the road crossings near you, so you don't get stuck at a lowered gate.
 - **The Driver screen shows only:** a map with live trains, your location, and the crossings near you that a train will block soon (and when). No station panel, no replay or speed controls, nothing else unless the user asks.

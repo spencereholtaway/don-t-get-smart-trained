@@ -59,6 +59,9 @@
   #card .live::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 4px 1px 0; border-radius: 50%; background: currentColor; }
   #card .late { color: var(--late); font-weight: 600; }
   #card .none { grid-column: 1 / -1; margin-top: 4px; font-size: 14px; color: var(--muted); }
+  #card .dir.horse { align-items: center; }
+  #card .dir.horse:first-child { border-top: 0; }
+  #card .dir.horse .none { font-size: 15px; font-weight: 500; letter-spacing: 0; }
 
   #tabs { pointer-events: auto; display: flex; padding-bottom: env(safe-area-inset-bottom, 0px);
     background: var(--panel); -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5); border-top: 1px solid var(--line); }
@@ -757,12 +760,10 @@
     const day = withDay && la(u).ymd !== la(nowS()).ymd ? `${dayFmt.format(new Date(u * 1000))} ` : '';
     return `${day}${hm}<span class="ampm">${ap}</span>`;
   }
-  // Horse rows (opts.covers) are plain text: no tapping, and the row is left out when no train
-  // in that direction ever passes the point.
-  function dirHTML(name, list, stationId, dir, opts = {}) {
+  function dirHTML(name, list, stationId, dir) {
     const u = upcoming(list), t = nowS();
     if (!u) {
-      const terminal = opts.covers ? !opts.covers(dir) : !data.trips.some((tr) => tr.dir === dir && tr.stops.slice(0, -1).some((s) => s[0] === stationId));
+      const terminal = !data.trips.some((tr) => tr.dir === dir && tr.stops.slice(0, -1).some((s) => s[0] === stationId));
       if (terminal) return ''; // end of the line: no row for the direction you can't go
       return `<div class="dir"><div><div class="dir-name">${name}</div></div><div class="none">No trains in the next two days</div></div>`;
     }
@@ -775,8 +776,7 @@
     if (late >= 2) meta += ` · <span class="late">${late} min late</span>`;
     const laterHTML = later.length ? `<div class="later">Then ${later.map((a) => `<b>${clockHTML(a.sched, true)}</b>`).join(' · ')}</div>` : '';
     const sel = selectedDir === dir;
-    const attrs = opts.covers ? '' : ` data-dir="${dir}" role="button" tabindex="0" aria-pressed="${sel}" aria-label="Show the next ${name.toLowerCase()} train on the map"`;
-    return `<div class="dir${sel ? ' selected' : ''}"${attrs}><div><div class="dir-name">${name}</div><div class="dir-to">to ${next.trip.headsign}</div>${laterHTML}</div>`
+    return `<div class="dir${sel ? ' selected' : ''}" data-dir="${dir}" role="button" tabindex="0" aria-pressed="${sel}" aria-label="Show the next ${name.toLowerCase()} train on the map"><div><div class="dir-name">${name}</div><div class="dir-to">to ${next.trip.headsign}</div>${laterHTML}</div>`
       + `<div class="next"><div class="big">${big}</div><div class="meta">${meta}</div></div></div>`;
   }
   let cardHTML = '';
@@ -840,7 +840,9 @@
     const box = { l: pad.left, r: W - pad.right, t: pad.top, b: H - pad.bottom };
     const saved = { center: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
     const b = pts.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(pts[0], pts[0]));
-    let center = b.getCenter(), zoom = maxZoom;
+    // start from the flat fit: at a close zoom, tilted, far points can't be placed on screen
+    const flat = map.cameraForBounds(b, { padding: pad, bearing: 0 });
+    let center = b.getCenter(), zoom = Math.min(maxZoom, flat ? flat.zoom : maxZoom);
     const measure = () => {
       map.jumpTo({ center, zoom, pitch: VIEW_PITCH, bearing: 0 });
       const ps = pts.map((p) => map.project(p)), xs = ps.map((p) => p.x), ys = ps.map((p) => p.y);
@@ -870,7 +872,6 @@
   // For riders whose horses don't like trains. The point is your location projected onto the
   // track (each direction's track separately); the card shows when the next northbound and
   // southbound trains pass it. Nothing on the card or map is tappable.
-  const NEAR_STATION_M = 400;
   const lineTrip = data.trips.filter((t) => t.dir === 1).reduce((a, b) => (b.stops.length > a.stops.length ? b : a));
   let trackPt = null;
   function updateTrackPoint() {
@@ -907,40 +908,34 @@
     return out;
   }
   const covers = (dir) => data.trips.some((tr) => tr.dir === dir && timeAtDist(tr.stops, trackPt.d[tr.shape]) != null);
-  function fmtDistance(m) {
-    const ft = m * 3.28084;
-    return ft < 528 ? `${Math.max(10, Math.round(ft / 10) * 10)} ft` : `${(m / 1609.34).toFixed(1)} mi`;
-  }
-  // where the point is: at a station, or between the two either side of it
-  function placeName(pt) {
-    const d = pt.d[lineTrip.shape], s = lineTrip.stops;
-    let best = s[0];
-    for (const x of s) if (Math.abs(x[3] - d) < Math.abs(best[3] - d)) best = x;
-    if (Math.abs(best[3] - d) <= NEAR_STATION_M) return `Near ${stationsById[best[0]].name}`;
-    if (d < s[0][3]) return `South of ${stationsById[s[0][0]].name}`;
-    if (d > s[s.length - 1][3]) return `North of ${stationsById[s[s.length - 1][0]].name}`;
-    const i = s.findIndex((x, j) => j < s.length - 1 && x[3] <= d && d < s[j + 1][3]);
-    return `${stationsById[s[i][0]].name} – ${stationsById[s[i + 1][0]].name}`;
+  // Just "Next train northbound" and the minutes until it passes, then the same southbound.
+  function horseRowHTML(name, list, dir) {
+    if (!covers(dir)) return ''; // no train in this direction ever passes here
+    const n = list[0], s = n ? n.arr - nowS() : 0;
+    const big = !n ? '<span class="none">None soon</span>' : s <= 30 ? 'Now' : `${Math.ceil(s / 60)}<span class="unit">min</span>`;
+    return `<div class="dir horse"><div class="dir-name">Next train ${name}</div><div class="next"><div class="big">${big}</div></div></div>`;
   }
   function renderHorse() {
     let html;
-    if (!trackPt) html = '<div class="eyebrow">Nearest track</div><div class="station">Find your location</div><p class="hint">Share your location to see when trains pass the track nearest you.</p>';
+    if (!trackPt) html = '<div class="eyebrow">Next trains</div><div class="station">Find your location</div><p class="hint">Share your location to see when trains pass the track nearest you.</p>';
     else {
       const a = passesAt(trackPt);
-      html = `<div class="eyebrow">Nearest track · ${fmtDistance(trackPt.meters)} away</div><div class="station">${placeName(trackPt)}</div>`
-        + dirHTML('Northbound', a[1], null, 1, { covers }) + dirHTML('Southbound', a[0], null, 0, { covers });
+      html = horseRowHTML('northbound', a[1], 1) + horseRowHTML('southbound', a[0], 0);
     }
     if (html !== cardHTML) card.innerHTML = cardHTML = html;
     card.classList.remove('picked');
     focusTripId = null;
   }
-  // Horse framing: you and the nearest train, nothing else (you and the track point when no
-  // train is running). Far from the line, the whole line.
+  // Horse framing: you and the next train to pass the track near you, either direction, nothing
+  // else. If it hasn't set off yet, the station it leaves from; with no train today, the track
+  // point. Far from the line, the whole line.
   function fitHorse() {
     if (!me) return;
     const here = me.geometry.coordinates;
     if (nearestStation(...here).miles >= 30) return fitTilted(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(here, here)), 40);
-    const tr = nearestTrain(), pts = [here, tr ? [tr.lon, tr.lat] : [trackPt.lon, trackPt.lat]];
+    const a = passesAt(trackPt), n = [a[0][0], a[1][0]].filter((x) => x && x.off === 0 && x.arr > nowS()).sort((x, y) => x.arr - y.arr)[0];
+    const tr = n && lastTrains.find((x) => x.trip.id === n.trip.id), o = n && stationsById[n.trip.stops[0][0]];
+    const pts = [here, tr ? [tr.lon, tr.lat] : o ? [o.lon, o.lat] : [trackPt.lon, trackPt.lat]];
     const box = map.getContainer().getBoundingClientRect(), top = document.getElementById('fabs').getBoundingClientRect().top;
     fitPointsTilted(pts, { top: 70, bottom: box.bottom - top + 16, left: 40, right: 40 }, 15);
   }

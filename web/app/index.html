@@ -43,6 +43,10 @@
   #card .hint { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
   #card .dir { display: grid; grid-template-columns: 1fr auto; column-gap: 12px; align-items: start; padding: 11px 0 12px; border-top: 1px solid var(--line); }
   #card .dir-name { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+  #card .dir[data-dir] { cursor: pointer; -webkit-tap-highlight-color: transparent; transition: opacity .2s; }
+  #card .dir[data-dir]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
+  #card.picked .dir[data-dir]:not(.selected) { opacity: .4; }
+  #card .dir.selected .dir-name { color: var(--accent); }
   #card .dir-to { font-size: 13px; color: var(--muted); }
   #card .later { margin-top: 6px; font-size: 13px; color: var(--muted); }
   #card .later b { font-weight: 500; color: var(--fg); }
@@ -634,8 +638,11 @@
     if (mode === 'rider') {
       const hits = map.getLayer('stations') ? map.queryRenderedFeatures([[e.point.x - r, e.point.y - r], [e.point.x + r, e.point.y + r]], { layers: ['stations'] }) : [];
       const hit = hits.length ? stationsById[hits[0].properties.id] : null;
+      const hadDir = selectedDir != null;
       selectedStation = hit && hit !== selectedStation ? hit : null;
+      selectedDir = null; // a tap on the map also cancels a picked direction
       renderCard();
+      if (hadDir && !hit) fitRider(); // back to framing both trains
       return;
     }
     const hits = map.getLayer('crossings') ? map.queryRenderedFeatures([[e.point.x - r, e.point.y - r], [e.point.x + r, e.point.y + r]], { layers: ['crossings'] }) : [];
@@ -670,7 +677,7 @@
   const DRIVER_LAYERS = ['heat', 'crossing-pulse', 'crossings', 'crossing-labels'];
   let mode = 'rider';
   try { if (localStorage.getItem('mode') === 'driver') mode = 'driver'; } catch {}
-  let selectedStation = null, highlighted = null;
+  let selectedStation = null, selectedDir = null, highlighted = null;
   function riderStation() {
     if (selectedStation) return selectedStation;
     return me ? nearestStation(...me.geometry.coordinates).s : null;
@@ -688,7 +695,7 @@
     try { localStorage.setItem('mode', m); } catch {}
     for (const t of tabsEl.querySelectorAll('.tab')) t.setAttribute('aria-selected', String(t.dataset.mode === m));
     card.hidden = m !== 'rider';
-    if (m !== 'rider') selectedStation = null;
+    if (m !== 'rider') { selectedStation = null; selectedDir = null; }
     else selectedCrossing = null;
     renderCard();
     applyModeToMap();
@@ -745,7 +752,8 @@
     const late = next.live ? Math.round((next.arr - next.sched) / 60) : 0;
     if (late >= 2) meta += ` · <span class="late">${late} min late</span>`;
     const laterHTML = later.length ? `<div class="later">Then ${later.map((a) => `<b>${clockHTML(a.sched, true)}</b>`).join(' · ')}</div>` : '';
-    return `<div class="dir"><div><div class="dir-name">${name}</div><div class="dir-to">to ${next.trip.headsign}</div>${laterHTML}</div>`
+    const sel = selectedDir === dir;
+    return `<div class="dir${sel ? ' selected' : ''}" data-dir="${dir}" role="button" tabindex="0" aria-pressed="${sel}" aria-label="Show the next ${name.toLowerCase()} train on the map"><div><div class="dir-name">${name}</div><div class="dir-to">to ${next.trip.headsign}</div>${laterHTML}</div>`
       + `<div class="next"><div class="big">${big}</div><div class="meta">${meta}</div></div></div>`;
   }
   let cardHTML = '';
@@ -760,7 +768,21 @@
         + dirHTML('Northbound', a[1], st.id, 1) + dirHTML('Southbound', a[0], st.id, 0);
     }
     if (html !== cardHTML) { card.innerHTML = cardHTML = html; applyModeToMap(); }
+    card.classList.toggle('picked', selectedDir != null);
   }
+  // Tap a direction to frame you, the station and that direction's next train; tap it again
+  // (or anywhere on the map) to go back to both trains.
+  function pickDir(row) {
+    const d = +row.dataset.dir;
+    selectedDir = selectedDir === d ? null : d;
+    renderCard();
+    fitRider();
+  }
+  card.addEventListener('click', (e) => { const row = e.target.closest('.dir[data-dir]'); if (row) pickDir(row); });
+  card.addEventListener('keydown', (e) => {
+    const row = e.target.closest('.dir[data-dir]');
+    if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickDir(row); }
+  });
   setInterval(renderCard, 1000);
 
   // Rider framing: you, your station, and the next northbound and southbound trains to reach it
@@ -772,7 +794,7 @@
     if (me) pts.push(me.geometry.coordinates);
     if (me && nearestStation(...me.geometry.coordinates).miles >= 30) return fitTilted(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(pts[1], pts[1])), 40);
     const a = arrivalsAt(st.id);
-    for (const d of [1, 0]) {
+    for (const d of selectedDir == null ? [1, 0] : [selectedDir]) {
       const n = a[d][0], tr = n && n.off === 0 && lastTrains.find((x) => x.trip.id === n.trip.id);
       if (tr) pts.push([tr.lon, tr.lat]);
     }

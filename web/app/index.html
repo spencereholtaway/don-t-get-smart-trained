@@ -770,7 +770,7 @@
     if (html !== cardHTML) { card.innerHTML = cardHTML = html; applyModeToMap(); }
     card.classList.toggle('picked', selectedDir != null);
   }
-  // Tap a direction to frame you, the station and that direction's next train; tap it again
+  // Tap a direction to frame the station and that direction's next train; tap it again
   // (or anywhere on the map) to go back to both trains.
   function pickDir(row) {
     const d = +row.dataset.dir;
@@ -791,8 +791,9 @@
     const st = riderStation();
     if (!st) return;
     const pts = [[st.lon, st.lat]];
-    if (me) pts.push(me.geometry.coordinates);
-    if (me && nearestStation(...me.geometry.coordinates).miles >= 30) return fitTilted(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(pts[1], pts[1])), 40);
+    // a picked direction frames just the station and its train; otherwise you're in it too
+    if (me && selectedDir == null) pts.push(me.geometry.coordinates);
+    if (me && selectedDir == null && nearestStation(...me.geometry.coordinates).miles >= 30) return fitTilted(bounds.toArray().reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(pts[1], pts[1])), 40);
     const a = arrivalsAt(st.id);
     for (const d of selectedDir == null ? [1, 0] : [selectedDir]) {
       const n = a[d][0], tr = n && n.off === 0 && lastTrains.find((x) => x.trip.id === n.trip.id);

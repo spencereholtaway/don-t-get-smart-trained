@@ -7,7 +7,7 @@ Read `docs/decisions.md` first. It explains why the web version is throwaway and
 - **Two modes, as tabs at the bottom: Rider (the default) and Driver.** The last tab used is remembered.
 - **Rider use case:** commuters checking when the next train reaches their station.
   - The map shows live trains, stations and your location, with no crossings or traffic.
-  - A card at the bottom shows your nearest station: its name, then Northbound, then Southbound. Each direction shows the next train big (minutes away, or a clock time past an hour, live or scheduled, and how late), its destination, and the two scheduled trains after it. Trains that end at the station are left out, so Windsor's Northbound and Larkspur's Southbound just say "End of the line".
+  - A card at the bottom shows your nearest station: its name, then Northbound, then Southbound. Each direction shows the next train big (minutes away, or a clock time past an hour, live or scheduled, and how late), its destination, and the two scheduled trains after it. At the ends of the line the card shows only the direction you can go: Windsor has no Northbound row, Larkspur no Southbound row.
   - Tap a station on the map to see its trains instead. Tap elsewhere to go back to the nearest one.
   - **Default framing:** you, your nearest station, and the next northbound and southbound trains to reach it (if they're already on the line), all fitted above the card and map buttons in the 45° tilted view.
 - **Driver use case:** before driving, check whether a SMART train is about to block the road crossings near you, so you don't get stuck at a lowered gate.

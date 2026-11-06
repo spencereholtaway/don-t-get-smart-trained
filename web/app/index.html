@@ -734,7 +734,8 @@
     const u = upcoming(list), t = nowS();
     if (!u) {
       const terminal = !data.trips.some((tr) => tr.dir === dir && tr.stops.slice(0, -1).some((s) => s[0] === stationId));
-      return `<div class="dir"><div><div class="dir-name">${name}</div></div><div class="none">${terminal ? 'End of the line' : 'No trains in the next two days'}</div></div>`;
+      if (terminal) return ''; // end of the line: no row for the direction you can't go
+      return `<div class="dir"><div><div class="dir-name">${name}</div></div><div class="none">No trains in the next two days</div></div>`;
     }
     const { next, later } = u, s = next.arr - t;
     let big, meta = next.live ? '<span class="live">Live</span>' : 'Scheduled';

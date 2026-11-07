@@ -111,7 +111,8 @@ The idea: **the timetable moves the trains, and live data only nudges them.** A 
 2. **Use the timetable as the baseline.** For each trip, `stop_times.txt` says when the train leaves station A and arrives at station B. At time `t`, the train is between those stations. Use an ease-in/ease-out curve, not a straight line, so it speeds up from A and slows into B. It waits at each station for the scheduled dwell time. **This needs no requests at all.**
 3. **Live data sets a delay for each trip.** A trip update gives a predicted delay at the next stops. Position = timetable position at `t − delay`. If the feed has vehicle positions, project the GPS point onto the track and convert it into an implied delay. Don't snap the train to the raw GPS point, because GPS is noisy.
 4. **Blend corrections instead of jumping.** Keep a *displayed* delay and a *target* delay. When new data arrives, only the target changes. The displayed delay moves toward it over about 20–30 seconds, so the train looks like it's speeding up or slowing down.
-5. **Trains never move backward.** If the train is shown ahead of where it really is, it slows down or holds at the next station until it's back in line. Holding at a station looks natural. If it's behind, it can move up to about 1.5× speed to catch up.
+5. **Being right beats never moving backward.** Small backward steps (under about 40 m, the jitter of predictions updating) are held. A real correction is not: when live data says a train is running late after it was drawn on time, it eases back to where it really is within a second or two.
+   - Why: holding instead hid a train that was 5 minutes late. On Nov 6 at 4:52 PM, the late northbound was at 4th St in San Rafael, and the app drew it frozen at Marin Civic Center, 2.7 km ahead, where the timetable said it should be. A driver got stopped by a train the app didn't show there.
 6. **Show uncertainty as data ages.** Fresh data looks solid. As it gets older, keep using the last known delay but show the train as an estimate (faded marker, "estimated" label). After about 10 minutes without data, fall back to the plain timetable and say so.
 7. **Each refresh is one request per feed, covering all trains.** Each 511 realtime feed (e.g. trip updates, filtered to `agency=SA`) returns every SMART train in one response, but each feed is a separate request, so poll them on different schedules and only while the page is visible:
    - **Trip updates:** every 2–5 minutes (12–30 requests per hour). This is the feed that drives delays.
@@ -120,7 +121,7 @@ The idea: **the timetable moves the trains, and live data only nudges them.** A 
 
    Worst case that's about 34 requests per hour, under the 40 ceiling. During development the 10-per-hour target still applies, which in practice means live mode runs for a few minutes at a time, not continuously. Zero in fixture mode.
 
-Test it in fixture mode with a fake clock: speed time up, make up delays, and swap fixtures to simulate a new update arriving. Check that trains never jump or move backward.
+Test it in fixture mode with a fake clock: speed time up, make up delays, and swap fixtures to simulate a new update arriving. Check that trains don't jitter, and that a late train is drawn where it really is.
 
 ## Phase 3: write down what we learned
 

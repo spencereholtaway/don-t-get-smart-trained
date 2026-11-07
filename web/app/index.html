@@ -275,7 +275,8 @@
   function applyRealtime(rt) {
     const at = Math.max(rt.tripUpdatesAt || 0, rt.vehiclesAt || 0); // a new GPS fix counts, not just new trip updates
     if (!at || at === snapshotAt) return;
-    prevPredicted = snapshotAt ? predicted : null;
+    // ease from the previous snapshot only if it was today's and still fresh (not the bundled one)
+    prevPredicted = snapshotAt && at - snapshotAt < STALE_S && la(snapshotAt).ymd === la(at).ymd ? predicted : null;
     blendStart = nowS();
     predicted = buildPredicted(rt);
     snapshotAt = at;
@@ -292,9 +293,16 @@
     return { d: last[3], at: last[0] };
   }
 
-  const shown = {}; // tripId -> last displayed distance (trains never move backward)
+  // tripId -> last displayed distance. Small backward steps (jitter as predictions update) are
+  // held, but a real correction, like live data saying a train is running late after it was drawn
+  // on time, eases the train back within a second or two. Holding those put late trains minutes
+  // ahead of where they really were.
+  const shown = {}, HOLD_M = 40, EASE_BACK_S = 0.8;
+  let lastTrainsT = null;
 
   function trainsAt(t) {
+    const dt = lastTrainsT == null ? 0 : Math.max(0, Math.min(0.5, t - lastTrainsT));
+    lastTrainsT = t;
     const d = la(t), services = activeServices(d.ymd, d.dow), secs = t - d.midnight;
     const age = snapshotAt ? t - snapshotAt : Infinity, sameDay = snapshotAt != null && la(snapshotAt).ymd === d.ymd;
     // weight of live predictions: 1 while fresh, fading to 0 by STALE_S, 0 before the snapshot or on other days
@@ -313,7 +321,8 @@
       else if (live && w > 0.5) { pos = live; isLive = true; }
       if (!pos) { delete shown[trip.id]; continue; }
       let dist = pos.d;
-      if (shown[trip.id] != null && dist < shown[trip.id]) dist = shown[trip.id]; // hold, never reverse
+      const was = shown[trip.id];
+      if (was != null && dist < was) dist = was - dist < HOLD_M ? was : was - (was - dist) * Math.min(1, dt / EASE_BACK_S);
       shown[trip.id] = dist;
       const p = pointAt(trip.shape, dist);
       out.push({ trip, ...p, dist, live: isLive, at: pos.at, next: pos.next });

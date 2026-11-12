@@ -30,9 +30,9 @@ struct FramingRequest: Equatable {
 @Observable
 final class AppModel {
     /// Live data from the Cloudflare Worker, which holds the 511 key and caps 511 usage server-side.
-    /// Polling it never raises 511 usage: the Worker refreshes each feed at most every few minutes.
+    /// Polling it never raises 511 usage: the Worker refreshes GPS at most every 2 minutes.
     static let liveURL = URL(string: "https://smart-trains.smart-trains-worker.workers.dev/realtime")!
-    private static let pollInterval: Duration = .seconds(60)
+    private static let pollInterval: Duration = .seconds(30)
     /// Stop polling after 10 minutes without interaction.
     private static let idleTimeout: TimeInterval = 10 * 60
     /// More than this far from every station, "nearest station" means nothing.

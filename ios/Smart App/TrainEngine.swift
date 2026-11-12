@@ -75,7 +75,9 @@ final class TrainEngine {
     static let freshS = 8.0 * 60
     static let staleS = 10.0 * 60
     /// New live data eases in over this many seconds.
-    static let blendS = 25.0
+    static let blendS = 8.0
+    /// ...but only from a snapshot newer than this.
+    static let blendFromS = 4.0 * 60
 
     let data: TransitData
     let tripsById: [String: Trip]
@@ -249,8 +251,9 @@ final class TrainEngine {
         // a new GPS fix counts, not just new trip updates
         let at = max(rt.tripUpdatesAt ?? 0, rt.vehiclesAt ?? 0)
         guard at > 0, at != snapshotAt else { return false }
-        // ease from the previous snapshot only if it was today's and still fresh (not the bundled one)
-        if let s = snapshotAt, at - s < Self.staleS, day(s).ymd == day(at).ymd { prevPredicted = predicted } else { prevPredicted = nil }
+        // Ease from the previous snapshot only if it is the one just before this (not the bundled one,
+        // and not one from before the app was put away): otherwise go straight to where the train is.
+        if let s = snapshotAt, at - s < Self.blendFromS { prevPredicted = predicted } else { prevPredicted = nil }
         blendStart = now
         predicted = buildPredicted(rt)
         snapshotAt = at
@@ -290,28 +293,65 @@ final class TrainEngine {
         return out
     }
 
+    // The feed's predicted arrivals often run early: it can say a train reaches a station in 2 s when
+    // GPS has it 250 m out, or that it arrived 3 minutes ago while it is still 2 km away. Holding those
+    // times drew trains ahead of where they were, worst just before a station. So a fix sets a floor:
+    // the train can't reach its next stop sooner than it could cover the track left, and whatever it
+    // loses carries on down the line.
+    private static let minDwellS = 20.0, minSpeedMS = 14.0, brakeS = 12.0
+    /// Vehicle id -> where and when it first reported its current position.
+    private var lastFix: [String: (lat: Double, lon: Double, at: Double)] = [:]
+
     /// GPS correction: project each train's GPS fix onto its track, then re-time the run it is on
-    /// so the model passes that point at the GPS time, keeping the predicted arrival at the next stop.
+    /// so the model passes that point at the GPS time and reaches the next stop when it really can.
     private func correctWithGPS(_ rt: Realtime, _ predicted: inout [String: [TripStop]]) {
         for v in rt.vehicles {
+            // The feed sometimes repeats an old position under a new time. A train that says it is
+            // moving but hasn't moved is one of those: ignore it.
+            if let f = lastFix[v.id], f.lat == v.lat, f.lon == v.lon {
+                if v.at - f.at > 20, (v.speed ?? 0) > 3 { continue }
+            } else {
+                lastFix[v.id] = (v.lat, v.lon, v.at)
+            }
             guard var s = predicted[v.trip], let trip = tripsById[v.trip] else { continue }
             defer { predicted[v.trip] = s }
             let (d, meters) = project(onShape: trip.shape, lon: v.lon, lat: v.lat)
             if meters > 300 { continue } // too far from the track to trust
             let t = v.at - day(v.at).midnight
-            if v.status == "STOPPED_AT", let seq = v.stopSeq, seq > 0 {
-                if s.indices.contains(seq - 1) {
-                    s[seq - 1].arr = min(s[seq - 1].arr, t)
-                    s[seq - 1].dep = max(s[seq - 1].dep, t + 20)
+            // Stop j can't be reached before `arr`: move it later, and each stop after it that this
+            // makes late too. The feed's running times are kept; station waits shrink first, to minDwellS.
+            func delay(from j: Int, to earliest: Double) {
+                var arr = earliest, k = j
+                while k < s.count, s[k].arr < arr {
+                    let run = k + 1 < s.count ? s[k + 1].arr - s[k].dep : 0
+                    let dwell = min(s[k].dep - s[k].arr, Self.minDwellS)
+                    s[k].arr = arr
+                    s[k].dep = max(s[k].dep, arr + dwell)
+                    arr = s[k].dep + run
+                    k += 1
                 }
+            }
+            // Still at stop j at time t: it leaves no sooner than t + minDwellS.
+            func hold(at j: Int) {
+                let run = j + 1 < s.count ? s[j + 1].arr - s[j].dep : 0
+                s[j].arr = min(s[j].arr, t)
+                if s[j].dep < t + Self.minDwellS {
+                    s[j].dep = t + Self.minDwellS
+                    delay(from: j + 1, to: s[j].dep + run)
+                }
+            }
+            if v.status == "STOPPED_AT", let seq = v.stopSeq, seq > 0 {
+                if s.indices.contains(seq - 1) { hold(at: seq - 1) }
                 continue
             }
             guard let i = s.indices.dropLast().first(where: { s[$0].dist <= d && d < s[$0 + 1].dist }) else { continue }
-            let a = s[i], b = s[i + 1]
-            if d - a.dist < 50 { s[i].dep = max(a.dep, t + 20); continue } // still at the station
-            if t >= b.arr { continue }
-            let q = Self.profileInverse((d - a.dist) / (b.dist - a.dist))
-            s[i].dep = min((t - q * b.arr) / (1 - q), t) // departure time that puts the train at d at time t
+            if d - s[i].dist < 50 { hold(at: i); continue } // still at the station
+            let q = Self.profileInverse((d - s[i].dist) / (s[i + 1].dist - s[i].dist))
+            // soonest it can arrive: the rest of the run at timetable pace, or at the speed it is doing now
+            let pace = t + (1 - q) * (trip.stops[i + 1].arr - trip.stops[i].dep)
+            let coast = t + (s[i + 1].dist - d) / max(v.speed ?? 0, Self.minSpeedMS) + Self.brakeS
+            delay(from: i + 1, to: min(pace, coast))
+            s[i].dep = min((t - q * s[i + 1].arr) / (1 - q), t) // departure time that puts the train at d at time t
             s[i].arr = min(s[i].arr, s[i].dep)
             for j in stride(from: i, to: 0, by: -1) where s[j - 1].dep > s[j].arr - 30 {
                 s[j - 1].dep = s[j].arr - 30

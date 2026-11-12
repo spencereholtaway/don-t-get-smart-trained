@@ -161,6 +161,8 @@ nonisolated struct Vehicle: Decodable {
     let trip: String
     let lat: Double
     let lon: Double
+    /// Meters per second.
+    let speed: Double?
     let status: String?
     let stopSeq: Int?
     let at: Double

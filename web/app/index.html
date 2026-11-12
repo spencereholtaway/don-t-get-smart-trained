@@ -140,9 +140,10 @@
   // Live data comes from the Cloudflare Worker in web/worker/, which holds the 511 key and
   // caps 511 usage server-side. ?api=<url> points the page at another copy (e.g. wrangler dev).
   const LIVE_URL = new URLSearchParams(location.search).get('api') || 'https://smart-trains.smart-trains-worker.workers.dev/realtime';
-  const POLL_MS = 60 * 1000;          // the Worker refreshes each 511 feed at most every 4 min
+  const POLL_MS = 30 * 1000;          // the Worker refreshes GPS at most every 2 min; polling it is free
   const IDLE_MS = 10 * 60 * 1000;     // stop polling after 10 min without interaction
-  const BLEND_S = 25;                 // new live data eases in over this many seconds
+  const BLEND_S = 8;                  // new live data eases in over this many seconds
+  const BLEND_FROM_S = 4 * 60;        // ...but only from a snapshot newer than this
   const data = await (await fetch('data.json', { cache: 'no-cache' })).json();
   const tripsById = Object.fromEntries(data.trips.map((t) => [t.id, t]));
   const stationsById = Object.fromEntries(data.stations.map((s) => [s.id, s]));
@@ -241,7 +242,7 @@
   function profileInverse(f) { let lo = 0, hi = 1; for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (profile(m) < f) lo = m; else hi = m; } return (lo + hi) / 2; }
 
   // GPS correction: project each train's GPS fix onto its track, then re-time the run it is on
-  // so the model passes that point at the GPS time, keeping the predicted arrival at the next stop.
+  // so the model passes that point at the GPS time and reaches the next stop when it really can.
   function projectOnShape(shapeId, lon, lat) {
     const { pts } = shapes[shapeId], k = Math.cos(lat * Math.PI / 180);
     let best = { e: Infinity, d: 0 };
@@ -253,20 +254,49 @@
     }
     return { d: best.d, meters: best.e * 111320 };
   }
+  // The feed's predicted arrivals often run early: it can say a train reaches a station in 2 s when
+  // GPS has it 250 m out, or that it arrived 3 minutes ago while it is still 2 km away. Holding those
+  // times drew trains ahead of where they were, worst just before a station. So a fix sets a floor:
+  // the train can't reach its next stop sooner than it could cover the track left, and whatever it
+  // loses carries on down the line.
+  const MIN_DWELL_S = 20, MIN_SPEED_MS = 14, BRAKE_S = 12;
+  const lastFix = {}; // vehicle id -> where and when it first reported its current position
   function correctWithGps(rt, predicted) {
   for (const v of rt.vehicles) {
+    // The feed sometimes repeats an old position under a new time. A train that says it is moving
+    // but hasn't moved is one of those: ignore it.
+    const f = lastFix[v.id];
+    if (!f || f.lat !== v.lat || f.lon !== v.lon) lastFix[v.id] = { lat: v.lat, lon: v.lon, at: v.at };
+    else if (v.at - f.at > 20 && v.speed > 3) continue;
     const p = predicted[v.trip], trip = tripsById[v.trip];
     if (!p || !trip) continue;
     const { d, meters } = projectOnShape(trip.shape, v.lon, v.lat);
     if (meters > 300) continue; // too far from the track to trust
     const T = v.at - la(v.at).midnight, s = p.stops;
-    if (v.status === 'STOPPED_AT' && v.stopSeq) { const st = s[v.stopSeq - 1]; if (st) { st[1] = Math.min(st[1], T); st[2] = Math.max(st[2], T + 20); } continue; }
+    // Stop j can't be reached before `arr`: move it later, and each stop after it that this makes
+    // late too. The feed's running times are kept; station waits shrink first, to MIN_DWELL_S.
+    const delayFrom = (j, arr) => {
+      for (let k = j; k < s.length && s[k][1] < arr; k++) {
+        const run = k + 1 < s.length ? s[k + 1][1] - s[k][2] : 0, dwell = Math.min(s[k][2] - s[k][1], MIN_DWELL_S);
+        s[k][1] = arr; s[k][2] = Math.max(s[k][2], arr + dwell);
+        arr = s[k][2] + run;
+      }
+    };
+    // Still at stop j at time T: it leaves no sooner than T + MIN_DWELL_S.
+    const holdAt = (j) => {
+      const st = s[j], run = j + 1 < s.length ? s[j + 1][1] - st[2] : 0;
+      st[1] = Math.min(st[1], T);
+      if (st[2] < T + MIN_DWELL_S) { st[2] = T + MIN_DWELL_S; delayFrom(j + 1, st[2] + run); }
+    };
+    if (v.status === 'STOPPED_AT' && v.stopSeq) { if (s[v.stopSeq - 1]) holdAt(v.stopSeq - 1); continue; }
     const i = s.findIndex((x, j) => j < s.length - 1 && x[3] <= d && d < s[j + 1][3]);
     if (i < 0) continue;
-    const a = s[i], b = s[i + 1];
-    if (d - a[3] < 50) { a[2] = Math.max(a[2], T + 20); continue; } // still at the station
-    if (T >= b[1]) continue;
+    const a = s[i], b = s[i + 1], sch = trip.stops;
+    if (d - a[3] < 50) { holdAt(i); continue; } // still at the station
     const q = profileInverse((d - a[3]) / (b[3] - a[3]));
+    // soonest it can arrive: the rest of the run at timetable pace, or at the speed it is doing now
+    const pace = T + (1 - q) * (sch[i + 1][1] - sch[i][2]), coast = T + (b[3] - d) / Math.max(v.speed ?? 0, MIN_SPEED_MS) + BRAKE_S;
+    delayFrom(i + 1, Math.min(pace, coast));
     a[2] = Math.min((T - q * b[1]) / (1 - q), T); // departure time that puts the train at d at time T
     a[1] = Math.min(a[1], a[2]);
     for (let j = i; j > 0; j--) { if (s[j - 1][2] > s[j][1] - 30) { s[j - 1][2] = s[j][1] - 30; s[j - 1][1] = Math.min(s[j - 1][1], s[j - 1][2]); } }
@@ -275,8 +305,9 @@
   function applyRealtime(rt) {
     const at = Math.max(rt.tripUpdatesAt || 0, rt.vehiclesAt || 0); // a new GPS fix counts, not just new trip updates
     if (!at || at === snapshotAt) return;
-    // ease from the previous snapshot only if it was today's and still fresh (not the bundled one)
-    prevPredicted = snapshotAt && at - snapshotAt < STALE_S && la(snapshotAt).ymd === la(at).ymd ? predicted : null;
+    // Ease from the previous snapshot only if it is the one just before this (not the bundled one,
+    // and not one from before the page was put away): otherwise go straight to where the train is.
+    prevPredicted = snapshotAt && at - snapshotAt < BLEND_FROM_S ? predicted : null;
     blendStart = nowS();
     predicted = buildPredicted(rt);
     snapshotAt = at;
